@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+covid_kdca.xlsx
+pfilter.Rproj
+plots/
+outputs/
+css/
+macros.js

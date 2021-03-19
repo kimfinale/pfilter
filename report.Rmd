@@ -1,0 +1,31 @@
+---
+title: "Report"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r preamble}
+library(readr)
+```
+
+```{r}
+url <- "https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_daily.csv"
+dat <- read_csv(url)
+dat$date <- as.Date(strptime(as.character(dat$date), format = "%Y%m%d"))
+dat$daily_confirmed <- c(dat$confirmed[1], diff(dat$confirmed))
+dat$daily_death <-  c(dat$death[1], diff(dat$death))
+# > sum(1 != diff(dat$date))
+# [1] 0
+suppressMessages(library(tidyverse))
+ggplot(dat, aes(x = date)) +
+  geom_col(aes(y = daily_death)) + 
+  geom_line(aes(y = daily_confirmed))
+
+# add
+suppressMessages(library(data.table))
+suppressMessages(library(stringi))
+dat_region <- fread("https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_regional_daily.csv", encoding = "UTF-8")
+dat_region$region <- stri_unescape_unicode(gsub("<U\\+(....)>", "\\\\u\\1", dat_region$region))
+```
+

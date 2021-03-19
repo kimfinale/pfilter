@@ -1,0 +1,85 @@
+```{r, setup, echo = FALSE, message = FALSE, warning=FALSE}
+extrafont::loadfonts(device = "win", quiet = TRUE)
+suppressWarnings(suppressPackageStartupMessages(library(tidyverse)))
+suppressWarnings(suppressPackageStartupMessages(library(data.table)))
+theme_set(theme(text = element_text(family = "Calibri", size = 12)))
+# tstamp <- format(Sys.time(), "%Y%m%d")
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+
+## data preparation
+url <- "https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_daily.csv"
+dat <- data.table::fread(url)
+dat[, date := as.Date(strptime(as.character(date), format = "%Y%m%d"))]
+dat[, daily_confirmed := c(confirmed[1], diff(confirmed))]
+dat[, daily_death := c(death[1], diff(dat$death))]
+saveRDS(dat, paste0( "outputs/dat_ori", tstamp, ".rds"))
+
+## Fit starting from January 1, 2021
+# library(pfilter)
+devtools::load_all(".")
+library(parallel)
+library(doParallel)
+library(foreach)
+# dat_ori <- readRDS(paste0("outputs/dat_ori", tstamp, ".rds"))
+dat <- dat[date >= as.Date("2021-01-01"), c("date", "daily_confirmed")]
+names(dat) <- c("date", "daily_confirm")
+saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
+y20210101 <- readRDS("outputs/y20210101.rds")
+theta["betavol"] <- 0.40
+usethis::use_data(y0, overwrite = T)
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+
+set.seed(12)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+
+tic <- Sys.time()
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% { 
+  extract_trace(params = theta, y = y20210101, data = dat, 
+                data_type = "confirmation",
+                npart = 1e4, tend = nrow(dat), dt = 0.2, 
+                error_pdf = "negbin", negbin_size = 20)
+}
+parallel::stopCluster(cl)
+Sys.time() - tic
+
+saveRDS(pf, paste0("outputs/pf", tstamp, ".rds"))
+
+df <- as.data.frame(sapply(pf, function(x) x[,"Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, dat[, .(date, daily_confirm)])
+
+plt <-ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1) + 
+  labs(title = "R(t) estimated using particle filtering", y = "R(t)", x = "Day") +
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted") +
+  scale_x_date(date_breaks = "2 week", date_minor_breaks = "1 month", 
+               limits = c(min(df$date), max(df$date))) +
+  labs(x = "", y = "R(t)") 
+
+ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 3.4, height = 2.7, scale = 2, units = "in")
+
+daily_conf <- as.data.frame(sapply(pf, function(x) x[,"CI"]))
+daily_conf_quantile <- as.data.frame(t(apply(daily_conf, 1, function(x) quantile(x, pr))))
+df <- cbind(daily_conf_quantile, dat[, .(date, daily_confirm)])
+
+plt <- ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1) + 
+  labs(title = "Daily confirmed case estimated from particle filtering", y = "R(t)", x = "Day") +
+  geom_point(aes(y = daily_confirm), color = "darkred", size = 1) +
+  scale_x_date(date_breaks = "2 week", date_minor_breaks = "1 month") +
+  labs(x = "", y = "Daily confirmed case") 
+
+ggsave(paste0("plots/daily_confirmed", tstamp, ".png"), plt,  width = 3.4, 
+       height = 2.7, scale = 2, units = "in")
+```
+
+
+
+

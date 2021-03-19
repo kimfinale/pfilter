@@ -1,0 +1,719 @@
+---
+title: ""
+author: "Jong-Hoon Kim"
+date: "1/23/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE, comment = '', fig.width = 6, fig.height = 6)
+extrafont::loadfonts(device = "win", quiet = TRUE)# load fonts - every session
+ggplot2::theme_set(theme(text = element_text(family = "Calibri", size = 12),
+                         plot.title = element_text(size = 16, hjust = 0, vjust = 0.5),
+                         plot.subtitle = element_text(size = 13),
+                         plot.caption = element_text(size = 12)))
+```
+
+
+```{r data}
+theta_ <- data.table::fread("inst/extdata/theta.csv")
+theta <- theta_$val
+names(theta) <- theta_$name
+y0_ <- data.table::fread("inst/extdata/y0.csv")
+y0 <- y0_$val
+names(y0) <- y0_[["name"]]
+ 
+usethis::use_data(y0, overwrite = T)
+usethis::use_data(theta, overwrite = T)
+ 
+devtools::document()
+devtools::load_all(".")
+```
+
+# Check functions
+## process_model
+```{r}
+np <- 100 # number of particles
+tend <- 20
+beta = theta[["R0"]] * theta[["gamma"]]
+# volatility for beta (random walk)
+beta_vol <- matrix(rnorm(np * tend, mean = 0, sd = theta[["betavol"]]), nrow = tend)
+beta_vol[1,] <- exp(beta_vol[1,]) * beta # initial beta
+y <- data.frame(matrix(0, nrow = np, ncol = length(y0)))
+names(y) <- names(y0)
+y[,"S"] <- 1e7
+y[,"I"] <- 100
+yt <- y1 <- process_model(params = theta, y = y, beta = beta_vol[1,])
+for (i in 1:100) {
+  yt <- process_model(params = theta, y = yt, beta = beta_vol[1,])
+}
+head(y1)
+head(yt)
+head(beta_vol[1,])
+```
+
+## Rt data generation
+```{r}
+nt <- 200 # days
+param <- list()
+param$sigma <- 1/5.2 # 1 / sigma = mean incubation period
+param$epsilon <- 1/3 # 1/epsilon = mean latent period
+param$gamma <- 1/4.3
+param$R <- c(rep(1.2, nt/4), rep(1.4, nt/4), rep(0.8, nt/4), rep(1.2, nt/4))
+param$presymp_infect <- FALSE
+times <- 0:(nt-1) # simulation times
+yini <- c(S = 1e7, E = 40, P = 40, I = 100, R = 0, CE = 0,  CI = 0, CR = 0) # initial values
+
+library(deSolve) 
+library(tidyverse)
+
+ode(func = sepir, y = yini, times = times, parms = param) %>%
+  as.data.frame() -> out
+
+inf_daily <- diff(out$CE)
+onset_daily <- diff(out$CI)
+confirm_daily <- diff(out$CR)
+
+df <- data.frame(t = 1:length(param$R), 
+                 daily_R_true = param$R, 
+                 daily_infect = c(0, inf_daily),
+                 daily_onset = c(0, onset_daily),
+                 daily_confirm = c(0, confirm_daily))
+
+df %>% 
+  pivot_longer(cols = -t) %>%
+  filter(name != "daily_R_true") %>% 
+  ggplot(aes(t, value, color = name)) +
+  geom_line() +
+  labs(x = "time (day)", y = "number of individuals", color = "")
+
+# Rt_data <- df
+# usethis::use_data(Rt_data, overwrite = T)
+```
+
+## particle_filter - sample
+```{r}
+pf <- particle_filter(data_type = "infection", npart = 1e4, dt = 0.01, error_pdf = "pois")
+pf$lik_overall_average
+df <- cbind(Rt_data[,1:2], Rt_pf = pf$trace$beta/theta[["gamma"]])
+suppressMessages(library(tidyverse))
+df %>% pivot_longer(cols = -t) %>% 
+  ggplot(aes(t, value, color = name)) + 
+  geom_line()
+```
+
+## particle_filter - filtered distribution
+```{r}
+theta[["betavol"]] = 0.4
+pf <- particle_filter(data_type = "infection", npart = 1e4, dt = 0.02, error_pdf = "negbin", negbin_size = 100)
+pf$lik_overall_average
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[["gamma"]], 1, function(x) {quantile(x, pr)})))
+Rt_mean <- data.frame(mean = rowMeans(pf$beta_filtered/theta[["gamma"]]))
+df <- cbind(Rt_quantile, Rt_mean, Rt_data[,1:2])
+
+suppressMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  geom_point(aes(y = daily_R_true), color = "darkred", size = 1) +
+  labs(title = "R(t) via particle filtering", y = "R(t)", x = "Day")
+
+plot_latent_var(sim_res = pf, data_type = "infection")
+```
+
+## Particle filtering and backward sampling
+\[X(t_k) | Y(t_1)=y^*_1, \dots,\; Y(t_n)=y^*_n,\; X_k | Y_1=y_1^*, \dots,\; Y_n=y_n^*\]
+
+## repeat particle_filter and do backward sampling 
+```{r}
+res <- run_model(data_type = "infection", rep = 1e2, npart = 1e3, dt = 0.1,
+                 systematic_resampling = F)
+          
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(res$Rt, 1, function(x) {quantile(x, pr)})))
+library(data.table)
+Rt_mean <- data.frame(mean = rowMeans(res$Rt), 
+                      rollmean = frollmean(Rt_quantile[,3], n=7))
+df <- cbind(Rt_quantile, Rt_mean, Rt_data[,1:2])
+suppressPackageStartupMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  geom_point(aes(y = daily_R_true), color = "darkred") +
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day")
+```
+
+## Parallel forward particle filtering and backward sampling 
+```{r}
+library(parallel)
+library(doParallel)
+library(foreach)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+
+system.time({
+r <- foreach (i = 1:1e3, .combine = cbind, .packages ="pfilter", .inorder = F) %dopar% {
+  run_model(data_type = "infection", rep = 1, npart = 1e4, tend = 200, dt = 0.02, systematic_resampling = FALSE)
+}})
+
+parallel::stopCluster(cl)
+
+rt = r[9,] # Rt
+rtdf = data.frame(matrix(unlist(rt), ncol=length(rt), byrow=F))
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(rtdf, 1, function(x) {quantile(x, pr)})))
+library(data.table)
+Rt_mean <- data.frame(mean = rowMeans(rtdf), 
+                      rollmean = frollmean(Rt_quantile[,3], n=7))
+df <- cbind(Rt_quantile, Rt_mean, Rt_data[,1:2])
+suppressPackageStartupMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  geom_point(aes(y = daily_R_true), color = "darkred", size = 1) +
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day")
+
+plot_latent_var_pl(sim_res = r, data_type = "infection")
+```
+
+
+## parallel repeat particle_filter and do backward sampling 
+```{r}
+devtools::load_all(".")
+library(parallel)
+library(doParallel)
+library(foreach)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+system.time({
+r <- foreach (i=1:1e3, .combine = cbind, .packages = "pfilter", .inorder = F) %dopar% {
+  run_model(params = theta, y = y0, data = Rt_data, data_type = "confirmation",
+            rep = 1, npart = 1e3, tend = 200, dt = 0.1, 
+            systematic_resampling = FALSE)
+}})
+parallel::stopCluster(cl)
+
+rt <- r[9,] # Rt
+rtdf = data.frame(matrix(unlist(rt), ncol=length(rt), byrow=F))
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(rtdf, 1, function(x) {quantile(x, pr)})))
+library(data.table)
+Rt_mean <- data.frame(mean = rowMeans(rtdf), 
+                      rollmean = frollmean(Rt_quantile[,3], n=7))
+df <- cbind(Rt_quantile, Rt_mean, Rt_data[,1:2])
+suppressPackageStartupMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "grey50") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  geom_line(aes(y = daily_R_true), color = "darkred") +
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day")
+
+plot_latent_var_pl(sim_res = r, data_type = "confirmation")
+```
+
+## Maximum likelihood estimation test
+```{r}
+# devtools::load_all(".")
+mle <- maxlik(data_type = "confirmation")
+
+df <- cbind(Rt_data[,1:2], (mle$beta_trace/theta[name == "gamma", val]))
+suppressPackageStartupMessages(library(tidyverse))
+df %>% 
+  pivot_longer(cols = - t) %>%
+  ggplot(aes(t, value, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "R(t) via maximum likelihood", y = "R(t)", x = "Day")
+
+```
+
+## run_step function 
+```{r eval=F}
+# nc <- 1
+# S <- rep(1e3, nc)
+# E <- rep(10, nc)
+# P <- rep(10, nc)
+# I <- rep(10, nc)
+# R <- rep(0, nc)
+# daily_infect <- rep(0, nrow(y))
+# daily_symptom <- rep(0, nrow(y))
+# daily_confirm <- rep(0, nrow(y))
+# 
+# yini <- data.frame(S = S, E = E, P = P, I = I, R = R, CE = daily_infect, CI = daily_symptom, CR = daily_confirm)
+# 
+# run_step <- function(y, times, params){
+#   param$presymp_infect <- FALSE
+#   out <- as.data.frame(ode(y = y, func = sepir, times = times, parms = param))
+#   tail(out, 1)
+# }
+#     
+# # yini <- c(S = 1e7, E = 40, P = 40, I = 100, R = 0, CE = 0,  CI = 0, CR = 0) # initial values
+# out <- apply(yini, 1, run_step, times = c(0, 1), params = as.list(theta))
+# outdf <- data.frame(matrix(unlist(out), nrow = length(out), byrow = T))
+# outdf <- outdf[, -1] # remove the time column
+# names(outdf) <- names(yini)
+```
+
+
+## KDCA data
+### Data cleaning
+```{r}
+library(readxl)
+suppressMessages(library(tidyverse))
+d <- read_xlsx("covid_kdca.xlsx")
+names(d) = c("id", "nationality", "sex", "age", "sido", "sigungu", "date_symptom_onset", "date_diagnosis", "date_report", "route_infection", "country_orgin", "id_infector", "occupation")
+d1 <- d %>% filter(route_infection == "국내")%>% 
+  select(date_diagnosis) %>% 
+  group_by(date = date_diagnosis) %>% 
+  summarise(daily_confirm = n())
+d2 <- data.frame(date = seq(as.Date("2020-01-03"), as.Date("2021-02-23"), by = "day"))
+d2$t <- 1:nrow(d2)
+d3 <- left_join(d2, d1, by = "date")
+kdca_dat <- d3 %>% mutate(daily_confirm = ifelse(is.na(daily_confirm), 0, daily_confirm))
+
+# saveRDS(dat, paste0( "outputs/dat_", tstamp, ".rds"))
+## name standardization
+ggplot(kdca_dat, aes(t, daily_confirm)) +
+  geom_line()
+
+# library(data.table)
+# dat$daily_confirm <- frollmean(dat$daily_confirm, n = 7)
+# dat <- dat[7:nrow(dat),]
+# dat$t <- 1:nrow(dat)
+# dat$daily_confirm <- round(dat$daily_confirm)
+```
+
+
+
+### Data fitting - forward filtering
+```{r}
+dat <- kdca_dat
+theta[["betavol"]] = 0.55
+ynew <- c(S = 5*1e7, E = 1e1, P = 1e1, I = 1e1, R = 0, CE = 0, CI = 0, CR = 0)
+set.seed(10)
+pf <- particle_filter(y = ynew, data = dat, data_type = "confirmation", 
+                      npart = 2e4, tend = nrow(dat), dt = 0.2, 
+                      error_pdf = "negbin", negbin_size = 20)
+
+pf$lik_overall_average
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[["gamma"]], 1, 
+                                     function(x) {quantile(x, pr)})))
+Rt_mean <- data.frame(mean = rowMeans(pf$beta_filtered/theta[["gamma"]]))
+df <- cbind(Rt_quantile, Rt_mean, dat[,c("t", "date")])
+df$date <- seq(as.Date("2020-01-20"), length.out = nrow(df), by = "day")
+suppressMessages(library(tidyverse))
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "grey60") +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1, linetype = "dotted") + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  labs(title = "R(t) via particle filtering", y = "R(t)", x = "") +
+  geom_hline(yintercept = 1, color = "black", linetype = "dotted") + 
+  scale_y_continuous(limits = c(0, 10), breaks = c(0, 1, seq(2, 10, 2)), 
+                     labels = c(0, 1, seq(2, 10, 2))) + 
+  scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month", 
+               limits = c(as.Date("2020-01-20"), max(df$date)))
+
+plot_latent_var(sim_res = pf, data = dat, data_type = "confirmation")
+```
+
+### Parallel - forward filtering with backward sampling
+```{r}
+y0 <- c(S = 5*1e7, E = 1e1, P = 1e1, I = 1e1, R = 0, CE = 0, CI = 0, CR = 0)
+theta["betavol"] <- 0.6
+usethis::use_data(y0, overwrite = T)
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+
+library(parallel)
+library(doParallel)
+library(foreach)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+
+system.time({
+r <- foreach (i = 1:1e3, .combine = cbind, .packages ="pfilter", .inorder = F) %dopar% {
+  run_model(params = theta, y = y0, data = dat, data_type = "confirmation",
+            rep = 1, npart = 1e4, tend = nrow(dat), dt = 0.1, error_pdf = "negbin", negbin_size = 10,
+            systematic_resampling = FALSE)
+}})
+parallel::stopCluster(cl)
+
+# tstamp <- format(Sys.time(), "%Y%m%dT%H%M%S")
+# saveRDS(r, paste0( "outputs/ffbs_", tstamp, ".rds"))
+tstamp <- "20210305T141259"
+r <- readRDS(paste0( "outputs/ffbs_", tstamp, ".rds"))
+dat <- readRDS(paste0( "outputs/dat_", tstamp, ".rds"))
+
+
+rt <- r[9,] # Rt
+rtdf = data.frame(matrix(unlist(rt), ncol=length(rt), byrow=F))
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(rtdf, 1, function(x) {quantile(x, pr)})))
+library(data.table)
+Rt_mean <- data.frame(mean = rowMeans(rtdf), 
+                      rollmean = frollmean(Rt_quantile[,3], n=7))
+df <- cbind(Rt_quantile, Rt_mean, dat[, 2:3])
+df$date <- seq(as.Date("2020-01-20"), length.out = nrow(df), by = "day")
+suppressMessages(library(tidyverse))
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1, linetype = "dotted") + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day") +
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted") +
+  scale_y_continuous(limits = c(0, 10), breaks = c(0, 1, seq(2, 10, 2)), labels = c(0, 1, seq(2, 10, 2))) + 
+  scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month", limits = c(as.Date("2020-01-20"), max(df$date))) +
+  labs(x = "", y = "R(t)") 
+  # theme(axis.text.x = element_text(angle = 0, vjust = 1.0, hjust = 0.5))
+# ggsave("plots/Rt_ffbs.png", width = 16, height = 9, scale = 1, units = "cm")
+# plt <- plot_latent_var_pl(sim_res = r, data = dat, data_type = "confirmation")
+# ggsave("plots/daily_confirm_ffbs.png", plt, width = 16, height = 9, scale = 1, units = "cm")
+```
+
+## Can we stop and continue at any arbitrary time step?
+That is, can we fun the PF 
+1. particle_filter function that takes the weight (W) and particle ID (A) matrix, 
+beta, and latent variable
+
+```{r}
+theta[["betavol"]] = 0.5
+ynew <- c(S = 5*1e7, E = 1e1, P = 1e1, I = 1e1, R = 0, CE = 0, CI = 0, CR = 0)
+set.seed(10)
+tbegin <- 100
+tend <- 100
+dat <- kdca_dat[tbegin:(tend+tbegin-1),]
+y_pf <- as.data.frame(pf$latent_var_filtered[,tend,])
+names(y_pf) <- names(y0)
+beta_pf <- pf$beta_filtered[tend,]
+
+pf <- particle_filter(y = y_pf, beta0 = beta_pf,
+                      data = dat, data_type = "confirmation", 
+                      npart = 2e4, tend = tend, dt = 0.1,
+                      error_pdf = "negbin", negbin_size = 15)
+ 
+pf$lik_overall_average
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[["gamma"]], 1, 
+                                     function(x) {quantile(x, pr)})))
+Rt_mean <- data.frame(mean = rowMeans(pf$beta_filtered/theta[["gamma"]]))
+df <- cbind(Rt_quantile, Rt_mean, dat[,c("t", "date")])
+# df$date <- seq(as.Date("2020-01-03") + tbegin - 1, length.out = nrow(df), by = "day")
+
+suppressMessages(library(tidyverse))
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1, linetype = "dotted") + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  labs(title = "R(t) via particle filtering", y = "R(t)", x = "") +
+  geom_hline(yintercept = 1, color = "red", linetype = "dotted") + 
+  # scale_y_continuous(limits = c(0, 10), breaks = c(0, 1, seq(2, 10, 2)), 
+  #                    labels = c(0, 1, seq(2, 10, 2))) + 
+  scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month", 
+               limits = c(min(df$date), max(df$date)))
+
+plot_latent_var(sim_res = pf, data = dat, data_type = "confirmation")
+
+```
+
+## Testing arma::cube can be access through _ just like in Rcpp::NumericMatrix
+```{r}
+library(Rcpp)
+library(RcppArmadillo)
+sourceCpp("cpp/test.cpp")
+# a = array(1:12, c(2,3,2))
+# a[, , 1]
+# (a = export_array(Q = a, slice = 0))
+# # (m = export_mat(Q = a, slice = 0))
+# (v = export_vec(Q = a, col = 0, slice = 0))
+# (i = to_int(x = c(1.0, 2.2)))
+# m = matrix(1:12, nrow = 3)
+# m[,1]
+# (v = export_vec_from_mat(m = m, col = 0))
+# (ch = add_x("mr. "))
+# all_x("x")
+# all_x("y")
+int_sample(10)
+int_wt_sample(10, wt = c(0.8,0.2,rep(0,8)))
+sample_test(10, wt = c(0.8,0.2,rep(0,8)))
+```
+
+## testing assign_weights function
+```{r}
+library(Rcpp)
+library(RcppArmadillo)
+sourceCpp("cpp/assign_weights_cpp.cpp")
+st_now = data.matrix(data.frame(S=rep(1,10), E1 = rep(1,10), E2 = rep(1,10), I = rep(1,10), R = 1:10, CE1 = 101:110, CI = 101:110))
+st_before = data.matrix(data.frame(S=rep(1,10), E1 = rep(1,10), E2=rep(1,10), I = rep(1,10), R = 1:10-1, CE1 = round(seq(1, 100, length.out = 10)), CI = round(seq(1, 100, length.out = 10))))
+
+wt = assign_weights_cpp(st_now, st_before, 53L, data.matrix(Rt_data), "infection")
+all.equal(wt[1], dpois(101,100))
+```
+
+## testing particle_filter_cpp function
+```{r}
+library(Rcpp)
+library(RcppArmadillo)
+sourceCpp("cpp/particle_filter_cpp.cpp")
+```
+
+##Conditional log likelihood
+The estimated conditional log likelihood from a fitted model.
+The conditional likelihood is defined to be the value of the density
+\[ Y(t_k) | Y(t_1),\dots,Y(t_{k-1}) Y_k | Y_1,\dots,Y_{k-1}\] 
+evaluated at \[Y(t_k) = y^*_k Y_k = y_k^*\].
+
+Here, \({Y(t_k)}{Yk}\) is the observable process, and \(y^*_kyk*}\) the data, at time \(t_k\).
+
+Thus the conditional log likelihood at time \(t_k\) is
+\[{\ell_k(\theta) = \log f[Y(t_k)=y^*_k \vert Y(t_1)=y^*_1, \dots, Y(t_{k-1})=y^*_{k-1}],}{ell_k(theta)=log f[Yk = yk* | Y1=y1*, \dots, Y(k-1)=y(k-1)*],}\]
+where is the probability density above.
+
+## pomp package
+```{r}
+library(tidyverse)
+read_csv(paste0("https://kingaa.github.io/sbied/stochsim/", "Measles_Consett_1948.csv")) %>%
+select(week,reports=cases) -> meas
+meas %>% as.data.frame() %>% head()
+
+sir_step <- function (S, I, R, N, Beta, mu_IR, delta.t, ...) {
+  dN_SI <- rbinom(n=1,size=S,prob=1-exp(-Beta*I/N*delta.t))
+  dN_IR <- rbinom(n=1,size=I,prob=1-exp(-mu_IR*delta.t))
+  S <- S - dN_SI
+  I <- I + dN_SI - dN_IR
+  R <- R + dN_IR
+  c(S = S, I = I, R = R)
+}
+
+sir_rinit <- function (N, eta, ...) {
+  c(S = round(N*eta), I = 1, R = round(N*(1-eta)))
+}
+
+library(pomp)
+meas %>%
+pomp(times="week",t0=0,
+rprocess=euler(sir_step,delta.t=1/7),
+rinit=sir_rinit
+) -> measSIR
+
+sir_dmeas <- function (reports, H, rho, log, ...) {
+  dbinom(x=reports, size=H, prob=rho, log=log)
+}
+sir_rmeas <- function (H, rho, ...) {
+  c(reports=rbinom(n=1, size=H, prob=rho))
+}
+measSIR %>%
+  pomp(
+  rmeasure=sir_rmeas,
+  dmeasure=sir_dmeas
+) -> measSIR
+
+measSIR %>%
+  simulate(
+  params=c(Beta=7.5,mu_IR=0.5,rho=0.5,eta=0.03,N=38000),
+  nsim=20,format="data.frame",include.data=TRUE
+) -> sims
+sims %>%
+  ggplot(aes(x=week,y=reports,group=.id,color=.id=="data"))+
+  geom_line()+
+  guides(color=FALSE)
+```
+
+```{r}
+library(pomp)
+library(tidyverse)
+seir_step <- Csnippet("
+  double N = S + E1 + E2 + I + R;
+  double dN_SE1 = beta * S * I / N * dt;
+  double dN_E1E2 = 2 * sigma * E1 * dt;
+  double dN_E2I = 2 * sigma * E2 * dt;
+  double dN_IR = gamma * I * dt;
+  S +=  - dN_SE1;
+  E1 += dN_SE1 - dN_E1E2;
+  E2 += dN_E1E2 - dN_E2I;
+  I += dN_E2I - dN_IR;
+  R += dN_IR;
+  H += dN_SE1;
+")
+
+seir_rinit <- Csnippet("
+  S = S_0;
+  E1 = E1_0;
+  E2 = E2_0;
+  I = I_0;
+  R = R_0;
+  H = H_0;
+")
+
+seir_dmeas <- Csnippet("
+  lik = dpois(daily_infect, H, give_log);
+")
+
+seir_rmeas <- Csnippet("
+  daily_infect = rpois(H);
+")
+
+dat <- data.frame(day = Rt_data$t, daily_infect = Rt_data$daily_infect)
+
+dat %>% pomp(
+  times = "day", 
+  t0 = 1,
+  rprocess = euler(seir_step, delta.t = 0.2),
+  rinit = seir_rinit,
+  rmeasure = seir_rmeas,
+  dmeasure = seir_dmeas,
+  accumvars = "H",
+  statenames = c("S", "E1", "E2", "I", "R", "H"),
+  paramnames = c("beta", "sigma", "gamma", "S_0", "E1_0", "E2_0", "I_0", "R_0", "H_0")) -> covid_seir
+
+covid_seir %>%
+  simulate(params = c(beta=1.2*0.25, sigma=0.25, gamma=0.25,
+                      S_0=1e7, E1_0=40, E2_0=40, I_0=100, R_0=0, H_0=0),
+nsim = 20, format="data.frame", include.data=TRUE) -> sims
+
+sims %>%
+  ggplot(aes(x=day,y=daily_infect, group=.id, color=.id=="data"))+
+  geom_line()+
+  guides(color=FALSE)
+
+covid_seir %>%
+  pfilter(Np=1000, paramnames="beta") -> pfrick
+
+```
+
+```{r}
+library(pomp)
+library(tidyverse)
+seir_step <- Csnippet("
+  double N = S + E1 + E2 + I + R;
+  double dN_SE1 = beta * S * I / N * dt;
+  double dN_E1E2 = 2 * 0.25 * E1 * dt;
+  double dN_E2I = 2 * 0.25 * E2 * dt;
+  double dN_IR = 0.25 * I * dt;
+  S +=  - dN_SE1;
+  E1 += dN_SE1 - dN_E1E2;
+  E2 += dN_E1E2 - dN_E2I;
+  I += dN_E2I - dN_IR;
+  R += dN_IR;
+  H += dN_SE1;
+")
+
+seir_rinit <- Csnippet("
+  S = 1e7;
+  E1 = 40;
+  E2 = 40;
+  I = 100;
+  R = 0;
+  H = 0;
+")
+
+seir_dmeas <- Csnippet("
+  lik = dpois(daily_infect, H, give_log);
+")
+
+seir_rmeas <- Csnippet("
+  daily_infect = rpois(H);
+")
+
+dat <- data.frame(day = Rt_data$t, daily_infect = as.integer(Rt_data$daily_infect))
+
+dat %>% pomp(
+  times = "day", 
+  t0 = 1,
+  rprocess = euler(seir_step, delta.t = 0.2),
+  rinit = seir_rinit,
+  rmeasure = seir_rmeas,
+  dmeasure = seir_dmeas,
+  accumvars = "H",
+  statenames = c("S", "E1", "E2", "I", "R", "H"),
+  paramnames = c("beta")) -> covid_seir
+
+covid_seir %>%
+  simulate(params = c(beta=1.2*0.25),
+nsim = 20, format="data.frame", include.data=TRUE) -> sims
+
+sims %>%
+  ggplot(aes(x=day,y=daily_infect, group=.id, color=.id=="data"))+
+  geom_line()+
+  guides(color=FALSE)
+
+pf = pfilter(covid_seir, Np=1000, params = c(beta = 0.3), 
+             filter.mean = T, filter.traj = T, verbose = T) 
+pf@filter.mean %>% 
+  t() %>%
+  as.data.frame() %>%
+  mutate(time = 1:n()) %>% 
+  pivot_longer(-time) %>%
+  filter(name == "I") %>% 
+  ggplot(aes(time, value)) +
+  geom_line(aes(color = name))
+  
+```      
+
+```{r}
+ewmeas %>%
+  subset(time < 1952) %>%
+  pomp(
+    times="time",t0=1948,
+    rprocess=euler(
+      Csnippet("
+        int nrate = 6;
+        double rate[nrate];	// transition rates
+        double trans[nrate];	// transition numbers
+        double dW;
+
+        // gamma noise, mean=dt, variance=(sigma^2 dt)
+        dW = rgammawn(sigma,dt);
+
+        // compute the transition rates
+        rate[0] = mu*pop;	// birth into susceptible class
+        rate[1] = (iota+Beta*I*dW/dt)/pop; // force of infection
+        rate[2] = mu;		// death from susceptible class
+        rate[3] = gamma;	// recovery
+        rate[4] = mu;		// death from infectious class
+        rate[5] = mu; 		// death from recovered class
+
+        // compute the transition numbers
+        trans[0] = rpois(rate[0]*dt);	// births are Poisson
+        reulermultinom(2,S,&rate[1],dt,&trans[1]);
+        reulermultinom(2,I,&rate[3],dt,&trans[3]);
+        reulermultinom(1,R,&rate[5],dt,&trans[5]);
+
+        // balance the equations
+        S += trans[0]-trans[1]-trans[2];
+        I += trans[1]-trans[3]-trans[4];
+        R += trans[3]-trans[5];
+      "),
+      delta.t=1/52/20
+    ),
+    rinit=Csnippet("
+      double m = pop/(S_0+I_0+R_0);
+      S = nearbyint(m*S_0);
+      I = nearbyint(m*I_0);
+      R = nearbyint(m*R_0);
+    "),
+    paramnames=c("mu","pop","iota","gamma","Beta","sigma",
+      "S_0","I_0","R_0"),
+    statenames=c("S","I","R"),
+    params=c(mu=1/50,iota=10,pop=50e6,gamma=26,Beta=400,sigma=0.1,
+      S_0=0.07,I_0=0.001,R_0=0.93)
+  ) -> ew1
+```
+

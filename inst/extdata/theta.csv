@@ -1,0 +1,12 @@
+name,val
+seed,123
+dt,0.01
+ndays,29
+nsteps,2900
+epsilon,0.333333333
+sigma,0.192307692
+gamma,0.23255814
+frac_asymp,0
+time_intervention_start,18
+betavol,0.4
+R0,1.1
