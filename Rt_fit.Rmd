@@ -119,7 +119,6 @@ plt <- ggplot(df, aes(x = t)) +
   geom_line(aes(y = Rt), color = "darkred", size = 1.2, linetype = "dotted") + 
   labs(title = "R(t) estimated using particle filtering", y = "R(t)", x = "Day") 
 
-
 ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 3.4, height = 2.7, scale = 2, units = "in")
 
 daily_inf <- as.data.frame(sapply(pf, function(x) x[,"CE"]))
@@ -132,7 +131,7 @@ plt <- ggplot(df, aes(x = t)) +
   geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
   labs(title = "Daily infecteds estimated from particle filtering", 
        y = "Daily infected", x = "Day") +
-  geom_point(aes(y = daily_infected), color = "darkred", size = 1.2) 
+  geom_point(aes(y = daily_infected), color = "darkred", size = 1.2)
 
 ggsave(paste0("plots/daily_infected", tstamp, ".png"), plt,  width = 3.4, 
        height = 2.7, scale = 2, units = "in")
