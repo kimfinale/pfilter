@@ -15,7 +15,7 @@
 particle_filter <- function (params = theta,
                             y = y0,
                             beta0 = NULL,
-                            data = Rt_data,
+                            data = NULL,
                             data_type = c("infection", "symptom onset", "confirmation"),
                             npart = 1000,
                             tend = 200,

@@ -19,9 +19,10 @@ process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0
   P <- y[, "P"]
   I <- y[, "I"]
   R <- y[, "R"]
-  daily_infect <- rep(0, nrow(y))
-  daily_symptom <- rep(0, nrow(y))
-  daily_confirm <- rep(0, nrow(y))
+
+  daily_infected <- rep(0, nrow(y))
+  daily_symptom_onset <- rep(0, nrow(y))
+  daily_confirmed <- rep(0, nrow(y))
 
   # yini <- data.frame(S = S, E = E, P = P, I = I, R = R, CE = daily_infect, CI = daily_symptom, CR = daily_confirm)
   # out <- apply(yini, 1, run_step, times = c(tbegin, tend), params = as.list(params))
@@ -46,9 +47,9 @@ process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0
     I <- I + P_to_I - I_to_R
     R <- R + I_to_R
 
-    daily_infect <- daily_infect + S_to_E
-    daily_symptom <- daily_symptom + P_to_I
-    daily_confirm <- daily_confirm + I_to_R
+    daily_infected <- daily_infected + S_to_E
+    daily_symptom_onset <- daily_symptom_onset + P_to_I
+    daily_confirmed <- daily_confirmed + I_to_R
 
   }
 
@@ -57,9 +58,9 @@ process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0
   y[, "P"] <- P
   y[, "I"] <- I
   y[, "R"] <- R
-  y[, "CE"] <- daily_infect
-  y[, "CI"] <- daily_symptom
-  y[, "CR"] <- daily_confirm
+  y[, "CE"] <- daily_infected
+  y[, "CI"] <- daily_symptom_onset
+  y[, "CR"] <- daily_confirmed
 
 
   # nm <- c("S", "E1", "E2", "I", "R", "CE1", "CE2", "CI")

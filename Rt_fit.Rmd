@@ -1,0 +1,261 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r, setup, echo = FALSE, message = FALSE, warning=FALSE}
+extrafont::loadfonts(device = "win", quiet = TRUE)
+suppressWarnings(suppressPackageStartupMessages(library(tidyverse)))
+suppressWarnings(suppressPackageStartupMessages(library(data.table)))
+theme_set(theme(text = element_text(family = "Calibri", size = 12)))
+# tstamp <- format(Sys.time(), "%Y%m%d")
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+
+## data preparation
+dat_all <- readRDS("outputs/sim20210329T111432.rds")
+dat <- dat_all$ODE[, c("time", "daily_infected", "daily_onset", "daily_confirmed", "Rt")]
+names(dat) <- c("t", "daily_infected", "daily_symptom_onset", "daily_confirmed", "Rt")
+
+## run particle filter
+devtools::load_all(".")
+theta["betavol"] <- 0.40
+y0 <- c(S = 1e7, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
+usethis::use_data(y0, overwrite = T)
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+
+pf <- particle_filter(params = theta,
+                      y = y0,
+                      data = dat,
+                      tend = nrow(dat),
+                      data_type = "infection", 
+                      npart = 1e4, 
+                      dt = 0.2, 
+                      error_pdf = "negbin",
+                      negbin_size = 20)
+
+
+pf$lik_overall_average
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[["gamma"]], 1, function(x) {quantile(x, pr)})))
+Rt_mean <- data.frame(mean = rowMeans(pf$beta_filtered/theta[["gamma"]]))
+df <- cbind(Rt_quantile, Rt_mean, t = dat[, "t"], daily_R_true = dat[,"Rt"])
+
+suppressMessages(library(tidyverse))
+
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) +
+  geom_point(aes(y = daily_R_true), color = "darkred", size = 1) +
+  labs(title = "R(t) particle filtering", y = "R(t)", x = "Day")
+
+plot_latent_var(sim_res = pf, data = dat, data_type = "infection")
+
+```
+
+```{r}
+pf <- list()
+nrun <- 10
+for (i in seq_len(nrun)){
+  pf[[i]] <- extract_trace(params = theta, 
+                  y = y0, 
+                  data = dat, 
+                  data_type = "infection",
+                  npart = 1e4, 
+                  tend = nrow(dat), 
+                  dt = 0.2, 
+                  error_pdf = "negbin", 
+                  negbin_size = 20)
+}
+
+df <- as.data.frame(sapply(pf, function(x) x[,"Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, dat[, c("t", "daily_infected", "Rt")])
+
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
+  geom_line(aes(y = Rt), color = "darkred", size = 1.2, linetype = "dotted") + 
+  labs(title = "R(t) estimated using particle filtering", y = "R(t)", x = "Day") 
+```
+
+```{r}
+set.seed(12)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+
+tic <- Sys.time()
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% { 
+  extract_trace(params = theta, 
+                y = y0, 
+                data = dat, 
+                data_type = "infection",
+                npart = 1e4, 
+                tend = nrow(dat), 
+                dt = 0.2, 
+                error_pdf = "negbin", 
+                negbin_size = 20)
+}
+parallel::stopCluster(cl)
+Sys.time() - tic
+```
+
+```{r}
+tstamp <- format(Sys.time(), "%Y%m%dT%H%M%S")
+saveRDS(pf, paste0("outputs/pf", tstamp, ".rds"))
+# library(data.table)
+df <- as.data.frame(sapply(pf, function(x) x[,"Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, dat[, c("t", "daily_infected", "Rt")])
+
+plt <- ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
+  geom_line(aes(y = Rt), color = "darkred", size = 1.2, linetype = "dotted") + 
+  labs(title = "R(t) estimated using particle filtering", y = "R(t)", x = "Day") 
+
+
+ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 3.4, height = 2.7, scale = 2, units = "in")
+
+daily_inf <- as.data.frame(sapply(pf, function(x) x[,"CE"]))
+daily_inf_quantile <- as.data.frame(t(apply(daily_inf, 1, function(x) quantile(x, pr))))
+df <- cbind(daily_inf_quantile, dat[, c("t", "daily_infected")])
+
+plt <- ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
+  labs(title = "Daily infecteds estimated from particle filtering", 
+       y = "Daily infected", x = "Day") +
+  geom_point(aes(y = daily_infected), color = "darkred", size = 1.2) 
+
+ggsave(paste0("plots/daily_infected", tstamp, ".png"), plt,  width = 3.4, 
+       height = 2.7, scale = 2, units = "in")
+```
+
+## fit stochastic model outputs
+```{r}
+## data preparation
+set.seed(7)
+tstamp <- format(Sys.time(), "%Y%m%dT%H%M%S")
+dat_all <- readRDS("outputs/sim20210329T111432.rds")
+# saveRDS(dat_all, "outputs/sim20210329T111432.rds")
+sample_ids <- sample(1:100, 10, replace = FALSE)
+data_type <- "infection"
+vn <- var_names(data_type)
+
+for (id in sample_ids) {
+  inf <- dat_all[[vn[["dat_var"]]]][, id]
+  dat1 <- data.frame(x = inf)
+  names(dat1) <- vn[["dat_var"]]
+  dat2 <- data.frame(t = dat_all$ODE[, "time"],
+                    Rt = dat_all$ODE[, "Rt"], 
+                    daily_infected_ode = dat_all$ODE[, "daily_infected"],
+                    daily_symptom_onset_ode = dat_all$ODE[, "daily_symptom_onset"],
+                    daily_confirmed_ode = dat_all$ODE[, "daily_confirmed"])
+  dat <- cbind(dat1, dat2)
+
+  ## run particle filter
+  devtools::load_all(".")
+  theta["betavol"] <- 0.40
+  y0 <- c(S = 1e7, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
+  usethis::use_data(y0, overwrite = T)
+  usethis::use_data(theta, overwrite = T)
+  devtools::load_all(".")
+  set.seed(12)
+  ncores = detectCores()
+  cl <- makeCluster(getOption("cl.cores", ncores-2))
+  doParallel::registerDoParallel(cl)
+  
+  tic <- Sys.time()
+  pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% { 
+    extract_trace(params = theta, 
+                  y = y0, 
+                  data = dat, 
+                  data_type = data_type,
+                  npart = 1e4, 
+                  tend = nrow(dat), 
+                  dt = 0.2, 
+                  error_pdf = "negbin", 
+                  negbin_size = 20)
+  }
+  parallel::stopCluster(cl)
+  Sys.time() - tic
+  
+  Rt_var_plot_save(pf, id, data_type = data_type)
+}  
+
+```
+
+```{r}
+Rt_var_plot_save <- function(pf, id, 
+                             data_type = c("infection", "symptom onset", "confirmation")) {
+  
+  type <- match.arg(data_type)
+  vn <- var_names(type)
+  model_var <- vn[["model_var"]]
+  dat_var <- vn[["dat_var"]]
+  ode_dat_var <- paste0(dat_var, "_ode")
+  saveRDS(pf, paste0("outputs/pf_id", id, "_", tstamp, ".rds"))
+  # library(data.table)
+  df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+  Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+  df <- cbind(Rt_quantile, dat[, c("t", dat_var, "Rt", "daily_infected_ode", 
+                                   "daily_symptom_onset_ode", 
+                                   "daily_confirmed_ode")])
+  
+  plt1 <- ggplot(df, aes(x = t)) +
+    geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+    geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+    geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
+    geom_line(aes(y = Rt), color = "darkred", size = 1.2, linetype = "dotted") + 
+    labs(title = "R(t) estimated using particle filtering", y = "R(t)", x = "Day") 
+  
+    # ggsave(paste0("plots/Rt_id", id, "_", tstamp, ".png"), plt1, width = 3.4, height = 2.7, scale = 2, units = "in")
+  # 
+  daily_var <- as.data.frame(sapply(pf, function(x) x[, model_var]))
+  daily_var_quantile <- as.data.frame(t(apply(daily_var, 1, function(x) quantile(x, pr))))
+  df <- cbind(daily_var_quantile, dat[, c("t", dat_var, ode_dat_var)])
+  
+  plt2 <- ggplot(df, aes(x = t)) +
+    geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+    geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+    geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) + 
+    geom_line(aes_string(y = ode_dat_var), size = 1.2) + 
+    labs(title = paste0(make_title(dat_var), " estimated using particle filtering"), 
+         y = make_title(dat_var), x = "Day") +
+    geom_point(aes_string(y = dat_var), color = "darkred", size = 1.2) 
+  
+  # ggsave(paste0("plots/", dat_var, "_id", id, "_", tstamp, ".png"), plt2,  width = 3.4, 
+  #        height = 2.7, scale = 2, units = "in")
+
+  plt <- gridExtra::grid.arrange(plt1, plt2, ncol = 1)
+  ggsave(paste0("plots/", dat_var, "_id", id, "_", tstamp, ".png"), plt,  
+         width = 3.4, height = 2.7*2, scale = 2, units = "in")
+}
+
+var_names <- function(data_type = c("infection", "symptom onset", "confirmation")) {
+  type <- match.arg(data_type)
+  model_var <- "CE"
+  dat_var <- "daily_infected"
+  
+  if (type == "symptom onset") {
+    model_var <- "CI"
+    dat_var <- "daily_symptom_onset"
+  }
+  else if (type == "confirmation") {
+    model_var <- "CR"
+    dat_var <- "daily_confirmed"
+  }
+  return(c(dat_var = dat_var, model_var = model_var))
+}
+
+make_title <- function(x){
+ paste(paste0(toupper(substr(x, 1, 1)), substr(x, 2, 5)), substr(x, 7, nchar(x)))
+} 
+```

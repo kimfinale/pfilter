@@ -1,12 +1,12 @@
 ---
-title: "COVID-19 분석"
+title: "주간 COVID-19 분석"
 subtitle: 
 author: "김종훈"
 institute: "국제백신연구소"
 date: "`r format(Sys.time(), '%B %d, %Y')`" 
 output:
   xaringan::moon_reader:
-    seal: true
+    seal: false
     css:
     - 'css/default.css'
     - 'css/default-fonts.css'
@@ -27,10 +27,20 @@ editor_options:
 tstamp <- format(Sys.Date(), "%Y%m%d")
 ```
 
-```{r child='COVID_report_fit.Rmd'}
+```{r child='COVID_report_fit.Rmd', eval = FALSE, echo = FALSE}
 ```
+<!-- class: title-slide    -->
 
-## 개요
+<!-- # 주간 COVID-19 $R_t$ 분석 -->
+
+<!-- ## 김종훈    -->
+
+<!-- ### 국제백신연구소  -->
+<!-- ### `r format(Sys.time(), '%B %d, %Y')` -->
+
+
+## 주간 COVID-19 $R_t$ 분석 (`r format(Sys.time(), '%B %d, %Y')`)
+<!-- ## 개요 -->
 - **Susceptible-Exposed-Presymptomatic-Infectious-Removed** 모형
 ```{r echo=FALSE, out.width="300px", out.height="100px", fig.align='center'}
 knitr::include_graphics("figures/sepir_schematic.png")
@@ -71,6 +81,7 @@ knitr::include_graphics(paste0("plots/Rt", tstamp, ".png"))
 class: 10px-font 
 ## $R_t$ 추정값
 ```{r echo=FALSE, message=FALSE}
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 suppressWarnings(suppressPackageStartupMessages(library(kableExtra)))
 suppressWarnings(suppressPackageStartupMessages(library(data.table)))
 suppressWarnings(suppressPackageStartupMessages(library(dplyr)))

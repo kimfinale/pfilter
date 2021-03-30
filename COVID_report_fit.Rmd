@@ -1,19 +1,40 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
 ```{r, setup, echo = FALSE, message = FALSE, warning=FALSE}
 extrafont::loadfonts(device = "win", quiet = TRUE)
-suppressWarnings(suppressPackageStartupMessages(library(tidyverse)))
+# suppressWarnings(suppressPackageStartupMessages(library(tidyverse)))
+suppressWarnings(suppressPackageStartupMessages(library(ggplot2)))
 suppressWarnings(suppressPackageStartupMessages(library(data.table)))
 theme_set(theme(text = element_text(family = "Calibri", size = 12)))
-# tstamp <- format(Sys.time(), "%Y%m%d")
+tstamp <- format(Sys.time(), "%Y%m%d")
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 
 ## data preparation
-url <- "https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_daily.csv"
-dat <- data.table::fread(url)
-dat[, date := as.Date(strptime(as.character(date), format = "%Y%m%d"))]
-dat[, daily_confirmed := c(confirmed[1], diff(confirmed))]
-dat[, daily_death := c(death[1], diff(dat$death))]
-saveRDS(dat, paste0( "outputs/dat_ori", tstamp, ".rds"))
+# url <- "https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_daily.csv"
+# dat <- data.table::fread(url)
+# dat[, date := as.Date(strptime(as.character(date), format = "%Y%m%d"))]
+# dat[, daily_confirmed := c(confirmed[1], diff(confirmed))]
+# dat[, daily_death := c(death[1], diff(dat$death))]
+# saveRDS(dat, paste0( "outputs/dat_ori", tstamp, ".rds"))
 
+## data preparation
+d <- readxl::read_xlsx("covid_region_korea.xlsx")
+# > names(d)
+#[1] "진단일...1"     "서울"           "부산"           "대구"           "인천"
+#[6] "광주"           "대전"           "울산"           "세종"           "경기"
+#[11] "강원"           "충북"           "충남"           "전북"           "전남"
+#[16] "경북"           "경남"           "제주"           "검역"           "합계"
+#[21] "...21"          "서울+경기+인천" "진단일...23"   
+
+dat <- data.frame(date = d[,1], daily_confirmed = (d[,20] - d[,19]))
+names(dat) <- c("date", "daily_confirmed")
+dat <- dat[-c(404, 405, 406), ]
+dat$date <- as.Date(dat$date , format = "%Y-%m-%d")
+dat <- data.table::as.data.table(dat)
+saveRDS(dat, paste0( "outputs/dat_ori", tstamp, ".rds"))
 ## Fit starting from January 1, 2021
 # library(pfilter)
 devtools::load_all(".")
@@ -21,8 +42,8 @@ library(parallel)
 library(doParallel)
 library(foreach)
 # dat_ori <- readRDS(paste0("outputs/dat_ori", tstamp, ".rds"))
-dat <- dat[date >= as.Date("2021-01-01"), c("date", "daily_confirmed")]
-names(dat) <- c("date", "daily_confirm")
+dat <- dat_ori[date >= as.Date("2021-01-01"), c("date", "daily_confirmed")]
+# names(dat) <- c("date", "daily_confirm") #
 saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
 y20210101 <- readRDS("outputs/y20210101.rds")
 theta["betavol"] <- 0.40
@@ -30,17 +51,22 @@ usethis::use_data(y0, overwrite = T)
 usethis::use_data(theta, overwrite = T)
 devtools::load_all(".")
 
-set.seed(12)
+set.seed(2)
 ncores = detectCores()
 cl <- makeCluster(getOption("cl.cores", ncores-2))
 doParallel::registerDoParallel(cl)
 
 tic <- Sys.time()
 pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% { 
-  extract_trace(params = theta, y = y20210101, data = dat, 
+  extract_trace(params = theta, 
+                y = y20210101, 
+                data = dat, 
                 data_type = "confirmation",
-                npart = 1e4, tend = nrow(dat), dt = 0.2, 
-                error_pdf = "negbin", negbin_size = 20)
+                npart = 1e4, 
+                tend = nrow(dat), 
+                dt = 0.2, 
+                error_pdf = "negbin", 
+                negbin_size = 20)
 }
 parallel::stopCluster(cl)
 Sys.time() - tic

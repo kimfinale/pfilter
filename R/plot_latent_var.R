@@ -14,19 +14,19 @@ plot_latent_var <- function(sim_res = pf_result,
                             data_type = c("infection", "symptom onset", "confirmation")) {
   dtype <- match.arg(data_type)
   var <- "CE"
-  col_nm <- "daily_infect"
+  col_nm <- "daily_infected"
 
   if (dtype == "infection") {
     var <- "CE"
-    col_nm <- "daily_infect"
+    col_nm <- "daily_infected"
   }
   else if (dtype == "symptom onset") {
     var <- "CI"
-    col_nm <- "daily_symptom"
+    col_nm <- "daily_symptom_onset"
   }
   else if (dtype == "confirmation") {
     var <- "CR"
-    col_nm <- "daily_confirm"
+    col_nm <- "daily_confirmed"
   }
 
   var_quantile <- as.data.frame(t(apply(sim_res$latent_var_filtered[, , var], 2, function(x) {quantile(x, pr)})))

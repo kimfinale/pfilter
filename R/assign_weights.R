@@ -21,22 +21,22 @@ assign_weights <- function (var,
 
   if (type == "infection") {
     case_expected <- var[, t, "CE"]
-    case_data <- round(unlist(data[t, "daily_infect"]))
+    case_data <- round(unlist(data[t, "daily_infected"]))
   }
   else if (type == "symptom onset") {
     case_expected <- var[, t, "CI"]
-    case_data <- round(unlist(data[t, "daily_onset"]))
+    case_data <- round(unlist(data[t, "daily_symptom_onset"]))
   }
   else if (type == "confirmation") {
     case_expected <- var[, t, "CR"]
-    case_data <- round(unlist(data[t, "daily_confirm"]))
+    case_data <- round(unlist(data[t, "daily_confirmed"]))
   }
 
 
   if (!is.na(case_data)) {
     expected_val <- pmax(0, case_expected)# case_expected is a vector of length npart
     if (error_pdf == "pois"){
-    log_lik <- dpois(round(case_data), lambda = expected_val, log = T)
+      log_lik <- dpois(round(case_data), lambda = expected_val, log = T)
     }
     else if (error_pdf == "negbin") {
       log_lik <- dnbinom(round(case_data), size = negbin_size, mu = expected_val, log = T)
