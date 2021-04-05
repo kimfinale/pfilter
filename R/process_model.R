@@ -13,10 +13,16 @@
 #' @examples
 #' pop <- process_model(params, y, tbegin = 0, tend = 1,)
 # Process model for simulation --------------------------------------------
-process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0.2, beta = NULL) {
+process_model <- function (params = NULL,
+                           y = NULL,
+                           tbegin = 0,
+                           tend = 1,
+                           dt = 0.2,
+                           beta = NULL) {
   S <- y[, "S"]
   E <- y[, "E"]
   P <- y[, "P"]
+  A <- y[, "A"]
   I <- y[, "I"]
   R <- y[, "R"]
 
@@ -24,38 +30,37 @@ process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0
   daily_symptom_onset <- rep(0, nrow(y))
   daily_confirmed <- rep(0, nrow(y))
 
-  # yini <- data.frame(S = S, E = E, P = P, I = I, R = R, CE = daily_infect, CI = daily_symptom, CR = daily_confirm)
-  # out <- apply(yini, 1, run_step, times = c(tbegin, tend), params = as.list(params))
-  # outdf <- data.frame(matrix(unlist(out), nrow = length(out), byrow = T))
-  # outdf <- outdf[, -1] # remove the time column
-  # names(outdf) <- names(y)
-
-  pop <- S + E + P + I + R
-  zeta <- 1/(1/params[["sigma"]] - 1/params[["epsilon"]]) # rate from P to I
+  pop <- S + E + P + A + I + R
+  durP <- (1 / params[["delta"]] - 1 / params[["epsilon"]]) # residence time in P
+  zeta <- 1 / durP # rate from P to I
 
   for (ii in seq((tbegin + dt), tend, dt)) {
-    foi <- beta * I / pop
+    foi <- beta * (params[["rho_p"]] * P + params[["rho_a"]] * A + I) / pop
     S_to_E <- S * foi * dt
     E_to_P <- E * params[["epsilon"]] * dt
-    P_to_I <- P * zeta * dt
+    P_to_A <- P * params[["frac_a"]] * zeta * dt
+    P_to_I <- P * (1 - params[["frac_a"]]) * zeta * dt
     I_to_R <- I * params[["gamma"]] * dt
+    A_to_R <- A * params[["gamma"]] * dt
 
     # Process model for SEPIR
     S <- S - S_to_E
     E <- E + S_to_E - E_to_P
-    P <- P + E_to_P - P_to_I
+    P <- P + E_to_P - P_to_A - P_to_I
+    A <- A + P_to_A - A_to_R
     I <- I + P_to_I - I_to_R
-    R <- R + I_to_R
+    R <- R + I_to_R + A_to_R
 
     daily_infected <- daily_infected + S_to_E
     daily_symptom_onset <- daily_symptom_onset + P_to_I
-    daily_confirmed <- daily_confirmed + I_to_R
+    daily_confirmed <- daily_confirmed + A_to_R + I_to_R
 
   }
 
   y[, "S"] <- S
   y[, "E"] <- E
   y[, "P"] <- P
+  y[, "A"] <- A
   y[, "I"] <- I
   y[, "R"] <- R
   y[, "CE"] <- daily_infected

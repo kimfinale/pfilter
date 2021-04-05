@@ -7,11 +7,15 @@
 particle_filter(
   params = theta,
   y = y0,
-  data = Rt_data,
+  beta0 = NULL,
+  data = NULL,
   data_type = c("infection", "symptom onset", "confirmation"),
   npart = 1000,
   tend = 200,
   dt = 0.2,
+  error_pdf = c("pois", "negbin", "binom"),
+  negbin_size = 5,
+  binom_prob = 0.8,
   systematic_resampling = FALSE,
   filter_traj = TRUE
 )
@@ -19,13 +23,15 @@ particle_filter(
 \arguments{
 \item{params}{Parameters}
 
-\item{y}{A vector of state variables (e.g., c(S,E1,E2,I,X))}
+\item{y}{A vector of state variables (e.g., c(S,E,P,I,R))}
 
 \item{data}{data to calculate the likelihoods against}
 
 \item{data_type}{data based on the date of infection, symptom onset, or confirmation}
 
 \item{npart}{number of particles}
+
+\item{dt}{time step size for the Euler method}
 }
 \description{
 The \code{particle_filter()} estimates posterior distribution using the particle filtering method

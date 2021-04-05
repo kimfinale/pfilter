@@ -50,7 +50,14 @@ particle_filter <- function (params = theta,
       latent_var[, 1, nm] <- y[[nm]]
     }
   }
-  beta <- params[["R0"]] * params[["gamma"]]
+  durP <- (1 / params[["delta"]] - 1 / params[["epsilon"]])
+  durI <- (1 / params[["gamma"]])
+  fa <- params[["frac_a"]]
+  rhoa <- params[["rho_a"]]
+  rhop <- params[["rho_p"]]
+  R0_dur <- ((1 - fa) + fa * rhoa) * durI + rhop * durP
+  # beta <- params["beta"]
+  beta <- params[["R0"]] / R0_dur
   #beta_vol <- matrix(rlnorm(npart * tend, mean = -params[name == "betavol", val]^2/2, sd = params[name == "betavol", val]), ncol = tend)
   beta_vol <- matrix(rnorm(npart * tend, mean = 0, sd = params[["betavol"]]), nrow = tend)
   if (is.null(beta0)) {
@@ -117,6 +124,7 @@ particle_filter <- function (params = theta,
     traj[["S"]][tend] <- latent_var[loc[tend], tend, "S"]
     traj[["E"]][tend] <- latent_var[loc[tend], tend, "E"]
     traj[["P"]][tend] <- latent_var[loc[tend], tend, "P"]
+    traj[["A"]][tend] <- latent_var[loc[tend], tend, "A"]
     traj[["I"]][tend] <- latent_var[loc[tend], tend, "I"]
     traj[["R"]][tend] <- latent_var[loc[tend], tend, "R"]
     traj[["CE"]][tend] <- latent_var[loc[tend], tend, "CE"]
@@ -132,6 +140,7 @@ particle_filter <- function (params = theta,
       traj[["S"]][i-1] <- latent_var[loc[i-1], i-1, "S"]
       traj[["E"]][i-1] <- latent_var[loc[i-1], i-1, "E"]
       traj[["P"]][i-1] <- latent_var[loc[i-1], i-1, "P"]
+      traj[["A"]][i-1] <- latent_var[loc[i-1], i-1, "A"]
       traj[["I"]][i-1] <- latent_var[loc[i-1], i-1, "I"]
       traj[["R"]][i-1] <- latent_var[loc[i-1], i-1, "R"]
       traj[["CE"]][i-1] <- latent_var[loc[i-1], i-1, "CE"]

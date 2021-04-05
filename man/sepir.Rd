@@ -17,5 +17,5 @@ sepir(t, y, param)
 The \code{sepir} returns the rate of change of the SE1E2IR model that can be integrated using deSolve package
 }
 \examples{
-pop <- setup_population(disease, country); calculate_cases(disease, country, pop)
+res <- sepir(t, y, param)
 }

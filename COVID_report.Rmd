@@ -29,17 +29,9 @@ tstamp <- format(Sys.Date(), "%Y%m%d")
 
 ```{r child='COVID_report_fit.Rmd', eval = FALSE, echo = FALSE}
 ```
-<!-- class: title-slide    -->
-
-<!-- # 주간 COVID-19 $R_t$ 분석 -->
-
-<!-- ## 김종훈    -->
-
-<!-- ### 국제백신연구소  -->
-<!-- ### `r format(Sys.time(), '%B %d, %Y')` -->
 
 
-## 주간 COVID-19 $R_t$ 분석 (`r format(Sys.time(), '%B %d, %Y')`)
+## 주간 COVID-19 $R_t$ 분석 (`r gsub("^0", "", format(Sys.time(), '%d %B %Y'))`)
 <!-- ## 개요 -->
 - **Susceptible-Exposed-Presymptomatic-Infectious-Removed** 모형
 ```{r echo=FALSE, out.width="300px", out.height="100px", fig.align='center'}
@@ -62,18 +54,14 @@ knitr::include_graphics("figures/sepir_schematic.png")
   - 국가수리과학연구소 손우식 (모형 토의)
   - 국가수리과학연구소 최선화 (자료 토의)
 
---
-
-
-
 ---
-## $R_t$ 추정값, 일별 확진자 
+## 일별 확진자 및 $R_t$ 추정값 
 - 일별확진자 (자료 = 빨간점)
-```{r echo=FALSE, out.width="340px", out.height="270px", fig.align='center'}
+```{r echo=FALSE, out.width="400px", out.height="250px", fig.align='center'}
 knitr::include_graphics(paste0("plots/daily_confirmed", tstamp, ".png"))
 ```
 - $R_t$
-```{r echo=FALSE, out.width="340px", out.height="270px", fig.align='center'}
+```{r echo=FALSE, out.width="400px", out.height="250px", fig.align='center'}
 knitr::include_graphics(paste0("plots/Rt", tstamp, ".png"))
 ```
 

@@ -30,7 +30,6 @@ extract_trace <- function (params = NULL,
     nstatevar <- ncol(y)
   }
 
-
   res <- particle_filter(params = params,
                          beta0 = beta0,
                          y = y, data = data, data_type = type,
@@ -47,12 +46,23 @@ extract_trace <- function (params = NULL,
   output[, "S"] <- res$trace[["S"]]
   output[, "E"] <- res$trace[["E"]]
   output[, "P"] <- res$trace[["P"]]
+  output[, "A"] <- res$trace[["A"]]
   output[, "I"] <- res$trace[["I"]]
   output[, "R"] <- res$trace[["R"]]
   output[, "CE"] <- res$trace[["CE"]]
   output[, "CI"] <- res$trace[["CI"]]
   output[, "CR"] <- res$trace[["CR"]]
-  output[, "Rt"] <- res$trace[["beta"]]/params[["gamma"]]
+
+  durP <- (1 / params[["delta"]] - 1 / params[["epsilon"]])
+  durI <- (1 / params[["gamma"]])
+  fa <- params[["frac_a"]]
+  rhoa <- params[["rho_a"]]
+  rhop <- params[["rho_p"]]
+  R0_dur <- ((1 - fa) + fa * rhoa) * durI + rhop * durP
+  # beta <- params["beta"]
+  beta <- params[["R0"]] / R0_dur
+
+  output[, "Rt"] <- res$trace[["beta"]] * R0_dur
 
   return (output)
 }

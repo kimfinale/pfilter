@@ -16,11 +16,11 @@ plot_latent_var <- function(sim_res = pf_result,
   var <- "CE"
   col_nm <- "daily_infected"
 
-  if (dtype == "infection") {
-    var <- "CE"
-    col_nm <- "daily_infected"
-  }
-  else if (dtype == "symptom onset") {
+  # if (dtype == "infection") {
+  #   var <- "CE"
+  #   col_nm <- "daily_infected"
+  # }
+  if (dtype == "symptom onset") {
     var <- "CI"
     col_nm <- "daily_symptom_onset"
   }
@@ -37,9 +37,9 @@ plot_latent_var <- function(sim_res = pf_result,
   plt <- ggplot(df, aes(x = date)) +
     geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.3) +
     geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
-    geom_line(aes(y = `50%`), color = "steelblue", size = 1, linetype = "dotted") +
-    geom_line(aes(y = mean), color = "steelblue", size = 1) +
-    geom_point(aes(y = eval(parse(text = col_nm))), color = "darkred", size = 1) +
+    geom_line(aes(y = `50%`), color = "steelblue", size = 1.2) +
+    # geom_line(aes(y = mean), color = "steelblue", size = 1) +
+    geom_point(aes_string(y = col_nm), color = "darkred", size = 1.2) +
     labs(title = paste0("Daily ", dtype, " via particle filtering"), y = paste0("Daily ", dtype), x = "") +
     scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month", limits = c(as.Date("2020-01-20"), max(df$date)))
 

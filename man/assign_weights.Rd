@@ -8,7 +8,10 @@ assign_weights(
   var,
   t,
   data,
-  data_type = c("infection", "symptom onset", "confirmation")
+  data_type = c("infection", "symptom onset", "confirmation"),
+  error_pdf = c("pois", "negbin", "binom"),
+  negbin_size = 5,
+  binom_prob = 0.8
 )
 }
 \arguments{
