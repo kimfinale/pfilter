@@ -13,13 +13,12 @@ pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 
 ## data preparation
 dat_all <- readRDS("outputs/sim20210329T111432.rds")
-dat <- dat_all$ODE[, c("time", "daily_infected", "daily_onset", "daily_confirmed", "Rt")]
+dat <- dat_all$ODE[, c("time", "daily_infected", "daily_symptom_onset", "daily_confirmed", "Rt")]
 names(dat) <- c("t", "daily_infected", "daily_symptom_onset", "daily_confirmed", "Rt")
-
 ## run particle filter
 devtools::load_all(".")
 theta["betavol"] <- 0.40
-y0 <- c(S = 1e7, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
+y0 <- c(S = 1e7, E = 0, P = 0, A = 0, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
 usethis::use_data(y0, overwrite = T)
 usethis::use_data(theta, overwrite = T)
 devtools::load_all(".")
@@ -162,7 +161,7 @@ for (id in sample_ids) {
   ## run particle filter
   devtools::load_all(".")
   theta["betavol"] <- 0.40
-  y0 <- c(S = 1e7, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
+  y0 <- c(S = 1e7, E = 0, P = 0, A = 10, I = 10, R = 0, CE = 0, CI = 10, CR = 0)
   usethis::use_data(y0, overwrite = T)
   usethis::use_data(theta, overwrite = T)
   devtools::load_all(".")

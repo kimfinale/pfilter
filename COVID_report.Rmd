@@ -32,6 +32,7 @@ tstamp <- format(Sys.Date(), "%Y%m%d")
 
 
 ## 주간 COVID-19 $R_t$ 분석 (`r gsub("^0", "", format(Sys.time(), '%d %B %Y'))`)
+- 일별 업데이트 되는 $R_t$는 [Rt 계산기](https://kimfinale.shinyapps.io/COVID-19_Reproduction_Number_Korea/) 참조
 <!-- ## 개요 -->
 - **Susceptible-Exposed-Presymptomatic-Infectious-Removed** 모형
 ```{r echo=FALSE, out.width="300px", out.height="100px", fig.align='center'}
@@ -66,7 +67,7 @@ knitr::include_graphics(paste0("plots/Rt", tstamp, ".png"))
 ```
 
 ---
-class: 10px-font 
+class: 10px-font
 ## $R_t$ 추정값
 ```{r echo=FALSE, message=FALSE}
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
@@ -78,10 +79,10 @@ dat <- readRDS(paste0("outputs/dat", tstamp, ".rds"))
 
 df <- as.data.frame(sapply(pf, function(x) x[,"Rt"]))
 Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
-df <- cbind(Rt_quantile, dat[, .(date)])
+df <- cbind(Rt_quantile, date = dat[, "date"])
 df2 <- df[, c("date", "2.5%", "25%", "50%", "75%", "97.5%")]
 
-fwrite(df2, paste0("outputs/Rt_estimates", tstamp, ".csv"))
+data.table::fwrite(df2, paste0("outputs/Rt_estimates", tstamp, ".csv"))
 
 df2 %>%
   tail(n = 7) %>%
