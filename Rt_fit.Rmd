@@ -143,7 +143,7 @@ set.seed(7)
 tstamp <- format(Sys.time(), "%Y%m%dT%H%M%S")
 dat_all <- readRDS("outputs/sim20210329T111432.rds")
 # saveRDS(dat_all, "outputs/sim20210329T111432.rds")
-sample_ids <- sample(1:100, 10, replace = FALSE)
+sample_ids <- sample(1:100, 1, replace = FALSE)
 data_type <- "infection"
 vn <- var_names(data_type)
 
@@ -240,15 +240,15 @@ Rt_var_plot_save <- function(pf, id,
 var_names <- function(data_type = c("infection", "symptom onset", "confirmation")) {
   type <- match.arg(data_type)
   model_var <- "CE"
-  dat_var <- "daily_infected"
+  dat_var <- "daily_inf"
   
   if (type == "symptom onset") {
     model_var <- "CI"
-    dat_var <- "daily_symptom_onset"
+    dat_var <- "daily_ons"
   }
   else if (type == "confirmation") {
     model_var <- "CR"
-    dat_var <- "daily_confirmed"
+    dat_var <- "daily_con"
   }
   return(c(dat_var = dat_var, model_var = model_var))
 }

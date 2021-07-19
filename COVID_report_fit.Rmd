@@ -40,11 +40,11 @@ pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 
 dat <- readRDS("daily_sim/dat.rds") 
 saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
-
-# dat <- data.table::as.data.table(dat)
-
+# 
+dat <- data.table::as.data.table(dat)
+# 
 # library(pfilter)
-
+# 
 # devtools::load_all(".")
 # library(parallel)
 # library(doParallel)
@@ -54,7 +54,7 @@ saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
 # # y20210101$A <- 0
 # # saveRDS(y20210101, "outputs/y20210101.rds")
 # 
-# theta["betavol"] <- 0.12
+# theta["betavol"] <- 0.08
 # # usethis::use_data(y0, overwrite = T)
 # usethis::use_data(theta, overwrite = T)
 # devtools::load_all(".")
@@ -63,18 +63,18 @@ saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
 # ncores = detectCores()
 # cl <- makeCluster(getOption("cl.cores", ncores-2))
 # doParallel::registerDoParallel(cl)
-# 
+# #
 # tic <- Sys.time()
-# pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% { 
-#   extract_trace(params = theta, 
-#                 y = y20210101, 
-#                 data = dat, 
+# pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+#   extract_trace(params = theta,
+#                 y = y20210101,
+#                 data = dat,
 #                 data_type = "confirmation",
-#                 npart = 1e4, 
-#                 tend = nrow(dat), 
-#                 dt = 0.2, 
-#                 error_pdf = "negbin", 
-#                 negbin_size = 50)
+#                 npart = 1e4,
+#                 tend = nrow(dat),
+#                 dt = 0.2,
+#                 error_pdf = "negbin",
+#                 negbin_size = 15)
 # }
 # parallel::stopCluster(cl)
 # Sys.time() - tic

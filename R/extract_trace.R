@@ -64,6 +64,6 @@ extract_trace <- function (params = NULL,
 
   ##
   output[, "Rt"] <- res$trace[["beta"]] * R0_dur * res$trace[["S"]] / 50000030
-
+  # output[, "Rt"] <- res$trace[["beta"]] * R0_dur
   return (output)
 }

@@ -122,7 +122,7 @@ library(foreach)
 # latent variables for 1 Jan 2021 estimated by  previous particle filtering
 # simulations that used data from 20 Jan 2020
 y20210101 <- readRDS("outputs/y20210101.rds")
-theta["betavol"] <- 0.10
+theta["betavol"] <- 0.08
 usethis::use_data(theta, overwrite = T)
 devtools::load_all(".")
 
@@ -140,12 +140,12 @@ pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
                 tend = nrow(dat),
                 dt = 0.2,
                 error_pdf = "negbin",
-                negbin_size = 20)
+                negbin_size = 15)
 }
 parallel::stopCluster(cl)
 saveRDS(pf, "daily_sim/pf.rds")
 Rt <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
 daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
 ## save as the csv files as they are easier to
-readr::write_csv(Rt, "daily_sim/Rt.csv")
-readr::write_csv(daily_conf, "daily_sim/daily_confirmed.csv")
+write.csv(Rt, "daily_sim/Rt.csv", row.names = FALSE)
+write.csv(daily_conf, "daily_sim/daily_confirmed.csv", row.names = FALSE)
