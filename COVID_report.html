@@ -4,7 +4,8 @@
     <title>주간 COVID-19 분석</title>
     <meta charset="utf-8" />
     <meta name="author" content="김종훈" />
-    <meta name="date" content="2021-07-02" />
+    <meta name="date" content="2021-12-29" />
+    <script src="libs/header-attrs-2.7/header-attrs.js"></script>
     <script src="libs/kePrint-0.0.1/kePrint.js"></script>
     <link href="libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
     <link rel="stylesheet" href="css/default.css" type="text/css" />
@@ -20,7 +21,7 @@
 
 
 
-## 주간 COVID-19 `\(R_t\)` 분석 (2 July 2021)
+## 주간 COVID-19 `\(R_t\)` 분석 (29 December 2021)
 - 일별 업데이트 되는 `\(R_t\)`는 [Rt 계산기](https://kimfinale.shinyapps.io/COVID-19_Reproduction_Number_Korea/) 참조
 &lt;!-- ## 개요 --&gt;
 - **Susceptible-Exposed-Presymptomatic-Infectious-Removed** 모형
@@ -29,7 +30,7 @@
 - 모수
   - 평균 잠재기 (latent period, **E -&gt; P**): 3일
   - 평균 잠복기 (incubation period, **E -&gt; P -&gt; I**): 5.2일
-  - 증상 발현 후 확진/격리 (**I -&gt; R**): 4일
+  - 증상 발현 후 확진/격리 (**I -&gt; R**): 2.4일
   
 - `\(R_t\)` 추정 
   - Particle filtering (sequential Monte Carlo) 방법
@@ -37,17 +38,12 @@
   - 추정된 모수는 posterior distribution 의 표본 (1000개)으로 주어짐
   - 그림에서는 median (실선), 50% (짙은색), 95% (옅은색) 구간을 보여줌
 
-- 모형 개발 및 자료 분석      
-  - 국제백신연구소 김종훈 (모형 개발 및 자료 분석)
-  - 국가수리과학연구소 손우식 (모형 토의)
-  - 국가수리과학연구소 최선화 (자료 토의)
-
 ---
 ## 일별 확진자 및 `\(R_t\)` 추정값 
-- 일별확진자 (자료 = 빨간점)
-&lt;img src="plots/daily_confirmed20210702.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
+- 일별확진자 (자료 = 회색막대)
+&lt;img src="plots/daily_confirmed20211229.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
 - `\(R_t\)`
-&lt;img src="plots/Rt20210702.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
+&lt;img src="plots/Rt20211229.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
 
 ---
 class: 10px-font
@@ -65,63 +61,158 @@ class: 10px-font
  &lt;/thead&gt;
 &lt;tbody&gt;
   &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-06-26 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.02 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.29 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.43 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.62 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.99 &lt;/td&gt;
-  &lt;/tr&gt;
-  &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-06-27 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 0.99 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.27 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.45 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.64 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.04 &lt;/td&gt;
-  &lt;/tr&gt;
-  &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-06-28 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 0.97 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.25 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.45 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.67 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.14 &lt;/td&gt;
-  &lt;/tr&gt;
-  &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-06-29 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-23 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.51 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.63 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.77 &lt;/td&gt;
    &lt;td style="text-align:right;"&gt; 0.92 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.25 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.46 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.71 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.27 &lt;/td&gt;
   &lt;/tr&gt;
   &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-06-30 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 0.88 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.24 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.46 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.72 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.37 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-24 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.51 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.62 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.76 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.94 &lt;/td&gt;
   &lt;/tr&gt;
   &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-07-01 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 0.84 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.22 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.46 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.73 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.46 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-25 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.48 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.61 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.68 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.78 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.96 &lt;/td&gt;
   &lt;/tr&gt;
   &lt;tr&gt;
-   &lt;td style="text-align:left;"&gt; 2021-07-02 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 0.82 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.21 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.46 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 1.76 &lt;/td&gt;
-   &lt;td style="text-align:right;"&gt; 2.56 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-26 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.46 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.60 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.78 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.00 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-27 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.46 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.60 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.80 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.02 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-28 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.45 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.59 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.80 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.08 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-29 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.45 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.59 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.69 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.81 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.11 &lt;/td&gt;
   &lt;/tr&gt;
 &lt;/tbody&gt;
 &lt;/table&gt;
+
+---
+
+
+## 경기도 일별 확진자 및 `\(R_t\)` 추정값 
+- 일별확진자 (자료 = 회색막대)
+&lt;img src="plots/daily_confirmed_gg20211229.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
+- `\(R_t\)`
+&lt;img src="plots/Rt_gg20211229.png" width="400px" height="250px" style="display: block; margin: auto;" /&gt;
+
+---
+class: 10px-font
+## `\(R_t\)` 추정값
+&lt;table class="table" style="width: auto !important; "&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; date &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 2.5% &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 25% &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 50% &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 75% &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 97.5% &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-23 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.54 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.65 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.72 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.80 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.95 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-24 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.52 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.65 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.72 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.80 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.98 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-25 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.51 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.64 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.72 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.81 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.01 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-26 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.50 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.63 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.72 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.82 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.04 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-27 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.48 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.63 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.73 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.83 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.09 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-28 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.46 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.62 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.73 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.83 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.10 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; 2021-12-29 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.45 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.62 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.72 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.84 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.14 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+
+
+
+
+
+
+
+
+
+
+
     </textarea>
 <style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
 <script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>

@@ -1,0 +1,158 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+# ## Fit starting from January 1, 2022
+# devtools::install()
+library(data.table)
+# readRDS("outputs/data_full.rds") %>%
+#   filter(gubunEn == "Total", createDt < as.Date("2021-11-01")) %>%
+#   select(createDt, localOccCnt, overFlowCnt) -> dat
+# dat$createDt <- as.Date(dat$createDt)
+# names(dat) <- c("date", "local", "imported")
+# fwrite(dat, "daily_sim/dat20211031.csv")
+
+fread("daily_sim/dat20211031.csv") %>%
+  dplyr::select(date, local) -> dat
+
+names(dat) <- c("date", "daily_confirmed")
+
+library(dplyr)
+# dat <- fread("daily_sim/rawdat20211031.csv")
+# dat$date <- as.Date(dat$date, format = "%m/%d/%Y")
+# dat %>% filter(date > as.Date("2020-12-31"), date < as.Date("2021-11-01")) %>% select(date, local) -> dat
+# names(dat) <- c("date", "daily_confirmed")
+
+library(pfilter)
+library(parallel)
+library(doParallel)
+library(foreach)
+# latent variables for 1 Jan 2021 estimated by  previous particle filtering
+# simulations that used data from 20 Jan 2020
+y20210101 <- readRDS("outputs/y20210101.rds")
+y20210101 <- round(y20210101)
+theta["betavol"] <- 0.08
+theta["gamma"] <- 1/2.5
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+
+set.seed(23)
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y20210101,
+                data = dat,
+                data_type = "confirmation",
+                npart = 1e4,
+                tend = nrow(dat),
+                dt = 0.25,
+                error_pdf = "negbin",
+                negbin_size = 30,
+                stoch = TRUE)
+}
+parallel::stopCluster(cl)
+
+saveRDS(pf, "daily_sim/pf20211031.rds")
+Rt <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+## save as the csv files as they are easier to
+data.table::fwrite(Rt, "daily_sim/Rt20211031.csv")
+data.table::fwrite(daily_conf, "daily_sim/daily_confirmed20211031.csv")
+```
+
+
+```{r}
+dat <- fread("daily_sim/rawdat20211031.csv")
+dat$date <- as.Date(dat$date, format = "%m/%d/%Y")
+dat %>% 
+  filter(date > as.Date("2020-12-31"), date < as.Date("2021-11-01")) %>%
+  select(date, local) -> dat
+names(dat) <- c("date", "daily_confirmed")
+
+tstamp <- format(Sys.time(), "%Y%m%d")
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+theme_set(theme_bw())
+
+pf <- readRDS("daily_sim/raw_pf20211031.rds")
+df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, dat[, c("date", "daily_confirmed")])
+
+pf2 <- readRDS("daily_sim/pf20211031.rds")
+df2 <- as.data.frame(sapply(pf2, function(x) x[, "Rt"]))
+Rt_quantile2 <- as.data.frame(t(apply(df2, 1, function(x) quantile(x, pr))))
+df2 <- cbind(Rt_quantile2, dat[, c("date", "daily_confirmed")])
+
+col_fill <- "#1F618D"
+# col_dat <- "#F1948A"
+col_dat <- "grey80"
+# col_rt <- "#148F77"
+col_rt <- "#1F618D"
+col_rt2 <- "#8b0000" # dark green
+
+plt <- ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_rt, alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_rt, alpha = 0.7) +
+  geom_line(aes(y = `50%`), color = col_rt, size = 1) +
+  geom_ribbon(data = df2, aes(x = date, ymin = `2.5%`, ymax = `97.5%`), fill = col_rt2, alpha = 0.3, inherit.aes = FALSE) +
+  geom_ribbon(data = df2, aes(x = date, ymin = `25%`, ymax = `75%`), fill = col_rt2, alpha = 0.7, inherit.aes = FALSE) +
+  geom_line(data = df2, aes(x = date, y = `50%`), color = col_rt2, size = 1, inherit.aes = FALSE) + 
+  
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted")+
+  labs(title = "blue = KDCA, red = API",
+       y = expression(R[t]), x = "") +
+  scale_x_date(date_breaks = "1 month")
+
+
+plt2 <- ggplot(df, aes(x = date)) +
+  geom_line(aes(y = `50%`), color = col_rt, size = 1) +
+  geom_line(data = df2, aes(x = date, y = `50%`), color = col_rt2, size = 1, inherit.aes = FALSE) + 
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted")+
+  labs(title = "blue = KDCA, red = API",
+       y = expression(median~R[t]), x = "") +
+  scale_x_date(date_breaks = "1 month")
+
+
+
+rawdat %>% 
+  filter(date > as.Date("2020-12-31"), date < as.Date("2021-11-01")) %>%
+  select(date, local) -> rawdat
+
+plt3 <- ggplot(rawdat, aes(x = date)) +
+  geom_line(aes(y = local), color = col_rt, size = 1) +
+  geom_line(data = dat, aes(x = date, y = local), color = col_rt2, size = 1, inherit.aes = FALSE) + 
+  labs(title = "blue = KDCA, red = API",
+       y = "Daily confirmed", x = "") +
+  scale_x_date(date_breaks = "1 month")
+ 
+library(gridExtra)
+plts <- grid.arrange(plt3, plt, plt2, nrow = 3)
+
+ggsave(paste0("plots/kdca_api_data_comparison.png"), plts, width = 8, height = 9)
+
+
+plt4 <- ggplot(df, aes(x = date)) +
+  geom_line(aes(y = `50%`), color = col_rt, size = 1) +
+  geom_line(data = df2, aes(x = date, y = `50%`), color = col_rt2, size = 1, inherit.aes = FALSE) + 
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted")+
+  labs(title = "blue = KDCA, red = API",
+       y = expression(median~R[t]), x = "") +
+  scale_x_date(date_breaks = "7 day", limits = c(as.Date("2021-06-01"),as.Date("2021-07-31")))
+
+
+library(gridExtra)
+plts <- grid.arrange(plt3, plt, plt2, plt4, nrow = 4)
+
+ggsave(paste0("plots/kdca_api_data_comparison.png"), plts, width = 8, height = 12)
+   
+```
+

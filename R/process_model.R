@@ -18,7 +18,8 @@ process_model <- function (params = NULL,
                            tbegin = 0,
                            tend = 1,
                            dt = 0.2,
-                           beta = NULL) {
+                           beta = NULL,
+                           stoch = TRUE) {
   S <- y[, "S"]
   E <- y[, "E"]
   P <- y[, "P"]
@@ -35,13 +36,24 @@ process_model <- function (params = NULL,
   zeta <- 1 / durP # rate from P to I
 
   for (ii in seq((tbegin + dt), tend, dt)) {
-    foi <- beta * (params[["rho_p"]] * P + params[["rho_a"]] * A + I) / pop
-    S_to_E <- S * foi * dt
-    E_to_P <- E * params[["epsilon"]] * dt
-    P_to_A <- P * params[["frac_a"]] * zeta * dt
-    P_to_I <- P * (1 - params[["frac_a"]]) * zeta * dt
-    I_to_R <- I * params[["gamma"]] * dt
-    A_to_R <- A * params[["gamma"]] * dt
+    foi <- beta * (params[["bp"]] * P + params[["ba"]] * A + I) / pop
+    # message(paste('length of S =',length(S)))
+    if (stoch){
+      S_to_E <- rbinom(length(S), S, 1 - exp( - foi * dt))
+      E_to_P <- rbinom(length(E), E, 1 - exp( - params[["epsilon"]] * dt))
+      P_to_AI <- rbinom(length(P), P, 1 - exp( - zeta * dt))
+      P_to_A <- rbinom(length(P_to_AI), P_to_AI, params[["fa"]])
+      P_to_I <- P_to_AI - P_to_A
+      I_to_R <- rbinom(length(I), I, 1 - exp( - params[["gamma"]] * dt))
+      A_to_R <- rbinom(length(A), A, 1 - exp( - params[["gamma"]] * dt))
+    } else {
+      S_to_E <- S * foi * dt
+      E_to_P <- E * params[["epsilon"]] * dt
+      P_to_A <- P * params[["fa"]] * zeta * dt
+      P_to_I <- P * (1 - params[["fa"]]) * zeta * dt
+      I_to_R <- I * params[["gamma"]] * dt
+      A_to_R <- A * params[["gamma"]] * dt
+    }
 
     # Process model for SEPIR
     S <- S - S_to_E

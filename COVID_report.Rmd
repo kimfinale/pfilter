@@ -42,7 +42,7 @@ knitr::include_graphics("figures/sepir_schematic.png")
 - 모수
   - 평균 잠재기 (latent period, **E -> P**): 3일
   - 평균 잠복기 (incubation period, **E -> P -> I**): 5.2일
-  - 증상 발현 후 확진/격리 (**I -> R**): 4일
+  - 증상 발현 후 확진/격리 (**I -> R**): 2.4일
   
 - $R_t$ 추정 
   - Particle filtering (sequential Monte Carlo) 방법
@@ -50,14 +50,9 @@ knitr::include_graphics("figures/sepir_schematic.png")
   - 추정된 모수는 posterior distribution 의 표본 (1000개)으로 주어짐
   - 그림에서는 median (실선), 50% (짙은색), 95% (옅은색) 구간을 보여줌
 
-- 모형 개발 및 자료 분석      
-  - 국제백신연구소 김종훈 (모형 개발 및 자료 분석)
-  - 국가수리과학연구소 손우식 (모형 토의)
-  - 국가수리과학연구소 최선화 (자료 토의)
-
 ---
 ## 일별 확진자 및 $R_t$ 추정값 
-- 일별확진자 (자료 = 빨간점)
+- 일별확진자 (자료 = 회색막대)
 ```{r echo=FALSE, out.width="400px", out.height="250px", fig.align='center'}
 knitr::include_graphics(paste0("plots/daily_confirmed", tstamp, ".png"))
 ```
@@ -91,6 +86,49 @@ df2 %>%
   kbl(row.names = F) %>%
   kable_styling(full_width = F, position = "left")
 ```
+
+---
+```{r echo=FALSE, eval=TRUE}
+tstamp <- paste0("_gg", tstamp)
+```
+
+## 경기도 일별 확진자 및 $R_t$ 추정값 
+- 일별확진자 (자료 = 회색막대)
+```{r echo=FALSE, out.width = "400px", out.height = "250px", fig.align = 'center'}
+knitr::include_graphics(paste0("plots/daily_confirmed", tstamp, ".png"))
+```
+- $R_t$
+```{r echo=FALSE, out.width="400px", out.height="250px", fig.align='center'}
+knitr::include_graphics(paste0("plots/Rt", tstamp, ".png"))
+```
+
+---
+class: 10px-font
+## $R_t$ 추정값
+```{r echo=FALSE, message=FALSE}
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+suppressWarnings(suppressPackageStartupMessages(library(kableExtra)))
+suppressWarnings(suppressPackageStartupMessages(library(data.table)))
+suppressWarnings(suppressPackageStartupMessages(library(dplyr)))
+pf <- readRDS(paste0("outputs/pf", tstamp, ".rds"))
+dat <- readRDS(paste0("outputs/dat", tstamp, ".rds"))
+
+df <- as.data.frame(sapply(pf, function(x) x[,"Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, date = dat[, "date"])
+df2 <- df[, c("date", "2.5%", "25%", "50%", "75%", "97.5%")]
+
+data.table::fwrite(df2, paste0("outputs/Rt_estimates", tstamp, ".csv"))
+
+df2 %>%
+  tail(n = 7) %>%
+  dplyr::relocate(c("date", "2.5%", "25%", "50%", "75%", "97.5%")) %>%
+  mutate(across(where(is.numeric), ~ round(., 2))) %>% 
+  kbl(row.names = F) %>%
+  kable_styling(full_width = F, position = "left")
+```
+
+
 
 
 ```{r echo=FALSE, eval=FALSE}

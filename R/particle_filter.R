@@ -24,7 +24,8 @@ particle_filter <- function (params = theta,
                             negbin_size = 5,
                             binom_prob = 0.8,
                             systematic_resampling = FALSE,
-                            filter_traj = TRUE) {
+                            filter_traj = TRUE,
+                            stoch = TRUE) {
 
   # if (missing(npart) || is.null(npart)) {
   #   stop("Number of particles (npart) must be specified.")
@@ -79,11 +80,12 @@ particle_filter <- function (params = theta,
      # beta_vol[t, ] <- beta * exp(rnorm(npart, mean = 0, sd = params[["betavol"]]))
      # run process model
     latent_var[, t, ] <- process_model(params = params,
-                                         y = latent_var[, t-1, ],
-                                         tbegin = t-1,
-                                         tend = t,
-                                         dt = dt,
-                                         beta = beta_vol[t,])
+                                       y = latent_var[, t-1, ],
+                                       tbegin = t-1,
+                                       tend = t,
+                                       dt = dt,
+                                       beta = beta_vol[t,],
+                                       stoch = stoch)
     # calculate weights (likelihood)
     wt[, t] <- assign_weights(var = latent_var, t = t, data = data,
                               data_type = type, error_pdf = error_pdf,

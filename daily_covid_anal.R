@@ -1,19 +1,3 @@
-# # download the data from the coronaboard, which is deaily updated
-# d <- readr::read_csv("https://raw.githubusercontent.com/jooeungen/coronaboard_kr/master/kr_regional_daily.csv")
-# ## get the number of locally transmitted cases (excluding "검역")
-# library(dplyr)
-# d %>% filter(region != "검역") %>%
-#   group_by(as.factor(date)) %>%
-#   summarize(confirmed = sum(confirmed)) -> d2
-# names(d2) <- c("date", "cumul_confirmed")
-# d2$date <- as.Date(as.character(d2$date), format = "%Y%m%d")
-# d2 %>% filter(date >= as.Date("2020-12-31")) -> d3
-# dat <- d3 %>% filter(date >= as.Date("2021-01-01"))
-# dat$daily_confirmed <- diff(d3$cumul_confirmed)
-# saveRDS(dat, "daily_sim/dat.rds")
-# ## save the file also in csv format for easier handling in the shiny app
-# readr::write_csv(dat, "daily_sim/dat.csv")
-
 ## download daily update COVID-19 data from data.go.kr
 ## and add it to the existing data files (dat.csv, dat.rds)
 # eval(parse('covid_data_daily_update.R', 'UTF-8'))
@@ -36,8 +20,18 @@ service_key <- "KNu%2Fyp3%2FKm2MWttRvbZXNE%2Bb%2FEH44cfIYDvMgPFoSKUuKZIxqQoGu0gn
 start_dt <- gsub("-", "", as.character(Sys.Date()))
 end_dt <- start_dt
 
-# start_dt <- "20210626"
-# end_dt <- "20210626"
+# In case the program didn't run for any reason, you can set the start_dt and
+# end_dt manually, and run the program.
+# Also, you have to ensure that the last row of the data_full has the date one
+# day before the start_dt
+
+# library(tidyverse)
+# readRDS("outputs/data_full.rds") %>%
+#   dplyr::filter(createDt < as.Date("2021-07-07")) %>%
+#   saveRDS("outputs/data_full.rds")
+#
+# start_dt <- "20211130"
+# end_dt <- "20211116"
 
 uri <-  paste0(service_url,
                paste0("?serviceKey=", service_key),
@@ -50,11 +44,31 @@ xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
 root_node <- xmlRoot(xml_doc)
 xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
 
+# xml_data <- xml_data[order(xml_data$stdDay), ]
+# saveRDS(ds, "outputs/data_full_20200302_20200531.rds")
+
+# for(i in 1:(nrow(dd_total)-1)) {
+#   if(as.numeric(as.Date(dd_total[i+1, 1]) - as.Date(dd_total[i, 1])) != 1) {
+#     message(paste0("i = ", i))
+#   }
+# }
+# which(as.Date(dd$createDt) == "2020-10-12")
+# which(as.Date(dd$createDt) == "2020-10-13")
+#
+# rr <- dd[2564, ]
+# for(i in c(2:3, 7:11)) dd[, i] <- as.numeric(dd[, i])
+# rr[, c(2:3, 7:11)] <- colSums(dd[2528:2545, c(2:3, 7:11)])
+# rr[, 12:13] <- NA
+# rr[, c(1,14)] <- dd[2545, c(1,14)]
+# dd <- rbind(dd[1:2545, ], rr, dd[2546:nrow(dd), ])
+# saveRDS(dd, "outputs/data_full_20200601_20201231.rds")
+
 ncat <- 19 # 19 categories for regions: 17 regions, imported, and total
-days <- as.numeric(end_dt) - as.numeric(start_dt) + 1
-if (nrow(xml_data) == (ncat * days)) {
+days <- as.numeric(as.Date(end_dt, "%Y%m%d") - as.Date(start_dt, "%Y%m%d") + 1)
+if (nrow(xml_data) == ncat * days) {
   ## original data with full variables
   data_full <- readRDS("outputs/data_full.rds")
+  # saveRDS(data_full, "outputs/data_full_3Dec2021.rds")
   xml_data <- xml_data[order(xml_data$stdDay), ] # make ascending date
   if (as.Date(tail(xml_data$createDt, 1)) > as.Date(tail(data_full$createDt, 1))) {
     data_full <- rbind(data_full, xml_data)
@@ -63,70 +77,43 @@ if (nrow(xml_data) == (ncat * days)) {
 }
 
 
-# check the data that is just created if they are in the right format
-# data_full %>% group_by(as.Date(createDt)) %>% summarise(row = n())
-
-
-  ## data for particle filter fitting (date and daily confirmed)
-  # d <- dplyr::select(xml_data, createDt, gubunEn, localOccCnt)
-  # d$createDt <- as.Date(d$createDt)
-  # d$localOccCnt <- as.numeric(d$localOccCnt)
-  # if (tail(d$gubunEn, 1) == "Total") {
-  #   # created date, cumulative confirmed cases, locally transmitted cases on the day
-  #   d <- d[nrow(d), c("createDt", "localOccCnt")]
-  # }
-
-# temporary dat creation from data_full (18Apr2021)
-# realized that cases from each region maybe include imported cases
-# Thsi is not obvious from daily reports from KDCA, but can be extracted using data.go.kr api
-# dat <- data_full %>% filter(gubunEn == "Total") %>%
-#   select(createDt, localOccCnt)
-# names(dat) <- c("date", "daily_confirmed")
-# dat$date <- as.Date(dat$date)
-# saveRDS(dat, "daily_sim/dat.rds")
-
+# data_full <- readRDS("outputs/data_full.rds")
 dat <- data_full %>% filter(gubunEn == "Total") %>%
   select(createDt, localOccCnt)
 names(dat) <- c("date", "daily_confirmed")
 dat$date <- as.Date(dat$date)
-dat$daily_confirmed <- as.numeric(dat$daily_confirmed) # orignally character
-
+dat$daily_confirmed <- as.numeric(dat$daily_confirmed) # originally character
 saveRDS(dat, "daily_sim/dat.rds")
 ## save the file also in csv format for easier handling in the shiny app
 readr::write_csv(dat, "daily_sim/dat.csv")
 
-# dat <- readRDS("daily_sim/dat.rds") # last
-# names(d) <- names(dat)
-
-# if (exists(d)) {
-#   ## daily_confirmed = locally transmitted cases
-#   ## cumul_confirmed = local + imported cases
-#   dat_added <- FALSE
-#   if (tail(dat$date, 1) < d$date) {
-#     dat <- rbind(dat, d)
-#     dat_added <- TRUE
-#   }
-#   if (dat_added) {
-#     saveRDS(dat, "daily_sim/dat.rds")
-#     ## save the file also in csv format for easier handling in the shiny app
-#     readr::write_csv(dat, "daily_sim/dat.csv")
-#   }
-#
+## Gyeonggi-do
+dat_gg <- data_full %>% filter(gubunEn == "Gyeonggi-do") %>%
+  select(createDt, localOccCnt)
+names(dat_gg) <- c("date", "daily_confirmed")
+dat_gg$date <- as.Date(dat_gg$date)
+dat_gg$daily_confirmed <- as.numeric(dat_gg$daily_confirmed)
+saveRDS(dat_gg, "daily_sim/dat_gg.rds")
+## save the file also in csv format for easier handling in the shiny app
+data.table::fwrite(dat_gg, "daily_sim/dat_gg.csv")
 
 # ## Fit starting from January 1, 2022
+# devtools::install()
 library(pfilter)
-devtools::load_all(".")
 library(parallel)
 library(doParallel)
 library(foreach)
 # latent variables for 1 Jan 2021 estimated by  previous particle filtering
 # simulations that used data from 20 Jan 2020
 y20210101 <- readRDS("outputs/y20210101.rds")
+y20210101 <- round(y20210101)
 theta["betavol"] <- 0.08
+theta["gamma"] <- 1/2.5
 usethis::use_data(theta, overwrite = T)
 devtools::load_all(".")
 
 set.seed(23)
+
 ncores <- detectCores()
 cl <- makeCluster(getOption("cl.cores", ncores - 2))
 doParallel::registerDoParallel(cl)
@@ -138,14 +125,45 @@ pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
                 data_type = "confirmation",
                 npart = 1e4,
                 tend = nrow(dat),
-                dt = 0.2,
+                dt = 0.25,
                 error_pdf = "negbin",
-                negbin_size = 15)
+                negbin_size = 30,
+                stoch = TRUE)
 }
 parallel::stopCluster(cl)
+
 saveRDS(pf, "daily_sim/pf.rds")
 Rt <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
 daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
 ## save as the csv files as they are easier to
-write.csv(Rt, "daily_sim/Rt.csv", row.names = FALSE)
-write.csv(daily_conf, "daily_sim/daily_confirmed.csv", row.names = FALSE)
+data.table::fwrite(Rt, "daily_sim/Rt.csv")
+data.table::fwrite(daily_conf, "daily_sim/daily_confirmed.csv")
+
+## Gyeonggi-do
+# dat_gg <- readRDS("daily_sim/dat_gg.rds")
+y20210101_gg <- readRDS("outputs/y20210101_gg.rds")
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf_gg <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y20210101_gg,
+                data = dat_gg,
+                data_type = "confirmation",
+                npart = 1e4,
+                tend = nrow(dat_gg),
+                dt = 0.25,
+                error_pdf = "negbin",
+                negbin_size = 30,
+                stoch = TRUE)
+}
+parallel::stopCluster(cl)
+saveRDS(pf_gg, "daily_sim/pf_gg.rds")
+Rt_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "Rt"]))
+daily_conf_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "CR"]))
+## save as the csv files as they are easier to
+data.table::fwrite(Rt_gg, "daily_sim/Rt_gg.csv")
+data.table::fwrite(daily_conf_gg, "daily_sim/daily_confirmed_gg.csv")
+

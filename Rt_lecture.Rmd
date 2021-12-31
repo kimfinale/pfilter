@@ -1,0 +1,268 @@
+---
+title: "Reproduction number"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+## Install EpiEstim package if it is not already
+```{r}
+list_of_packages <- c("EpiEstim") # packages we need
+new_packages <- list_of_packages[!(list_of_packages %in% installed.packages()[,"Package"])] 
+if(length(new_packages)) install.packages(new_packages)
+```
+
+## Global parameters
+```{r}
+# generation time follows a Gamma distribution
+gt_shape <- 2 # shape parameter
+gt_rate <- 1/2 # rate parameter
+# incubation period (infection - onset of symptoms) follows a Gamma distribution.
+incu_shape <- 2 # shape parameter
+incu_rate <- 1/3 # rate parameter
+# delay from infection to confirmation follows a Gamma distribution.
+conf_shape <- 2 # shape parameter
+conf_rate <- 1/4 # rate parameter
+# Rt time series
+Rt <- c(rep(1.2, 40), rep(2.2, 6), rep(0.8, 6), rep(0.8, 20))
+```
+
+## Create fake data using the renewal equation
+```{r}
+## weight function = generation time distribution
+wt <- function(x){
+  dgamma(x, shape = gt_shape, rate = gt_rate)
+}
+## weight function = generation time distribution
+## this function give the number of people effective at timt t by accounting
+## for all past infections and generation time distribution
+infect_wt <- function(t, It) {
+  inf_wt <- 0
+  for(i in 1:(t-1)) {
+    inf_wt <- inf_wt + It[t-i] * wt(i)
+  }
+  return(inf_wt)
+}
+# create_It
+# This function creates infection time series where I0 is infecteds on day 1
+create_It <- function(t = length(Rt)+1, I0 = 10) {
+  It <- c(I0, rep(NA, t-1))
+  for (i in 2:length(It)) {
+    It[i] <- Rt[i-1] * infect_wt(i, It)
+  }
+  return(round(It))
+}
+# create infection time series and plot
+It <- create_It()
+plot(It, type = "l")
+plot(Rt, type = "l")
+```
+
+## Rt estimation using EpiEstim package
+```{r}
+library(EpiEstim)
+## infection time series. Column name is I
+dat <- data.frame(I = It)
+
+## this is to define a window for running average -- default is 7
+window <- 7
+tstart <- seq(3, nrow(dat) - window)
+tend <- tstart + window
+
+cori_R <- 
+  estimate_R(incid = dat, method = c("parametric_si"),
+             config = make_config(list(mean_si = gt_shape / gt_rate,
+                             std_si = sqrt(gt_shape / (gt_rate^2)), 
+                             t_start = tstart, t_end = tend)))
+plot(1:length(Rt), Rt, col = 2)
+lines(tstart, cori_R$R$`Median(R)`, type = "l")
+```
+
+## Compare with the [WHO-PAHO estimator](https://harvardanalytics.shinyapps.io/covid19/?utm_source=pocket_mylist)
+This website does not seem to be working.
+```{r}
+d <- data.frame(date = seq(as.Date("2021-01-01"),  
+                           by = "day", length.out = length(It)), 
+                I = It)
+dt <- transform(d, date = format(date, "%m/%d/%Y"))
+write.csv(dt, file = "iseries.csv", row.names = F)
+```
+
+## Create onset time series
+```{r}
+# create_onset
+# create time series of symptom onset based on the infection time series and 
+# the pre-defined incubation period distribution
+# if stoch = TRUE, incubation period is a Gamma random variable with shape = 
+# incu_shape and rate = incu_rate
+create_onset <- function(inf = NULL, stoch = FALSE){
+  onset <- data.frame(t = rep(NA, sum(inf$inf)))
+  id <- 1
+  for (i in 1:nrow(inf)){
+    for(j in 1:inf$inf[i]){
+      if(stoch){
+        onset$t[id] <- inf$t[i] + rgamma(1, incu_shape, incu_rate)
+      } else {
+        onset$t[id] <- inf$t[i] + incu_shape / incu_rate
+      }
+      id <- id + 1
+    }
+  }
+  onset <- as.data.frame(table(round(onset)))
+  names(onset) <- c("t", "freq")
+  onset$t <- as.integer(as.character(onset$t))
+  return(onset)
+}
+
+set.seed(3) # to make stochastic clinical onset time series reproducible 
+inf <- data.frame(t = 1:length(It), inf = It)
+onset <- create_onset(inf = inf, stoch = F)
+
+plot(inf$t, inf$inf, xlim = c(0, 90), type = "l")
+lines(onset$t, onset$freq, col = 2)
+```
+
+## Rt estimation on serial interval using EpiEstim package
+```{r}
+library(EpiEstim)
+dat1 <- data.frame(t = 1:max(onset$t), I = 0)
+dat2 <- data.frame(t = onset$t, I = onset$freq)
+
+for (i in 1:nrow(dat1)) {
+  id <- which(dat2$t == i)
+  if(length(id) > 0){
+    dat1[i, 2] <- dat2[id, 2]
+  }
+}
+
+dat <- data.frame(I = round(dat1$I))
+
+window <- 7
+tstart <- seq(3, nrow(dat)- window )
+tend <- tstart + window
+cori_R <- 
+  estimate_R(incid = dat, method=c("parametric_si"), 
+             config = make_config(list(mean_si = gt_shape / gt_rate, 
+                                       std_si = sqrt(gt_shape / (gt_rate^2)), 
+                                       t_start = tstart, t_end= tend)))
+# plot(cori_R)
+plot(1:length(Rt), Rt, col = 2)
+lines(tstart, cori_R$R$`Median(R)`, type = "l")
+lines(tstart, cori_R$R$`Quantile.0.025(R)`, type = "l")
+lines(tstart, cori_R$R$`Quantile.0.975(R)`, type = "l")
+```
+
+## Create time series of patient confirmation
+```{r}
+# create_confirm
+# same as the create_onset with different parameters for Gamma distribution
+# create time series of confirmation based on the infection time series and 
+# the pre-defined delay distribution
+# if stoch = TRUE, delay distribution is a Gamma random variable with shape = 
+# conf_shape and rate = conf_rate
+create_confirm <- function(inf = NULL, stoch = FALSE){
+  confirm <- data.frame(t = rep(NA, sum(inf$inf)))
+  id <- 1
+  for (i in 1:nrow(inf)){
+    for(j in 1:inf$inf[i]){
+      if(stoch){
+        confirm$t[id] <- inf$t[i] + rgamma(1, conf_shape, conf_rate)
+      } else {
+        confirm$t[id] <- inf$t[i] + conf_shape / conf_rate
+      }
+      id <- id + 1
+    }
+  }
+  
+  confirm <- as.data.frame(table(round(confirm)))
+  names(confirm) <- c("t", "freq")
+  confirm$t <- as.integer(as.character(confirm$t))
+  return(confirm)
+}
+set.seed(3) # to make stochastic time series reproducible 
+inf <- data.frame(t = 1:length(It), inf = It)
+conf <- create_confirm(inf = inf)
+
+plot(inf$t, inf$inf, xlim = c(0, 90), type = "l")
+lines(conf$t, conf$freq, col = 2)
+```
+
+```{r}
+library(EpiEstim)
+dat1 <- data.frame(t = 1:max(conf$t), I = 0)
+dat2 <- data.frame(t = conf$t, I = conf$freq)
+for (i in 1:nrow(dat1)) {
+  id <- which(dat2$t == i)
+  if(length(id) > 0){
+    dat1[i, 2] <- dat2[id, 2]
+  }
+}
+
+dat <- data.frame(I = round(dat1$I))
+
+window <- 1
+tstart <- seq(3, nrow(dat)- window )
+tend <- tstart + window
+cori_R <- 
+  estimate_R(incid = dat, method=c("parametric_si"), 
+             config = make_config(list(mean_si = gt_shape / gt_rate, 
+                                       std_si = sqrt(gt_shape / (gt_rate^2)), 
+                                       t_start = tstart, t_end= tend)))
+
+plot(1:length(Rt), Rt, col = 2)
+lines(tstart, cori_R$R$`Median(R)`, type = "l")
+lines(tstart, cori_R$R$`Quantile.0.025(R)`, type = "l")
+lines(tstart, cori_R$R$`Quantile.0.975(R)`, type = "l")
+```
+
+## Gyeonggi-do data
+```{r}
+# library(readxl)
+# library(dplyr)
+# Sys.setlocale("LC_ALL", "Korean")
+# dat <- read_xlsx('data/kdca.xlsx')
+# dat$보도일 <- as.Date(dat$보도일, format = "%Y-%m-%d")
+# dat$발병일 <- as.Date(dat$발병일, format = "%Y-%m-%d")
+# dat$진단일 <- as.Date(dat$진단일, format = "%Y-%m-%d")
+# dat$신고일 <- as.Date(dat$신고일, format = "%Y-%m-%d")
+# 
+# local <- filter(dat, 감염경로 == "국내") 
+# ## Gyeonggi-do data
+# gg <- local %>%
+#   filter(거주시도 == "경기") %>% 
+#   group_by(신고일) %>% 
+#   summarize(case = n())
+# names(gg) <- c("date", "case")
+# saveRDS(gg, "gyeonggi.rds")
+gg <- readRDS("gyeonggi.rds")
+# fill in the missing dates
+dat1 <- data.frame(t = seq(min(gg$date), max(gg$date), by = "day"), I = 0)
+dat2 <- data.frame(t = gg$date, I = gg$case)
+for (i in 1:nrow(dat1)) {
+  id <- which(dat2$t == dat1$t[i])
+  if(length(id) > 0){
+    dat1[i, 2] <- dat2[id, 2]
+  }
+}
+
+dat <- data.frame(I = round(dat1$I))
+
+window <- 7
+tstart <- seq(3, nrow(dat)- window )
+tend <- tstart + window
+cori_R <- 
+  estimate_R(incid = dat, method = c("parametric_si"), 
+             config = make_config(list(mean_si = gt_shape / gt_rate, 
+                                       std_si = sqrt(gt_shape / (gt_rate^2)), 
+                                       t_start = tstart, t_end= tend)))
+plot(cori_R)
+# plot(1:length(Rt), Rt, col = 2)
+plot(tstart, cori_R$R$`Median(R)`, type = "l")
+lines(tstart, cori_R$R$`Quantile.0.025(R)`, type = "l", lty = 2, col = 3)
+lines(tstart, cori_R$R$`Quantile.0.975(R)`, type = "l", lty = 2, col = 3)
+abline(h = 1, col = 2)
+```
+
+

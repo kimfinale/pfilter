@@ -126,7 +126,7 @@ plot_latent_var(sim_res = pf, data_type = "infection")
 ```
 
 ## Particle filtering and backward sampling
-\[X(t_k) | Y(t_1)=y^*_1, \dots,\; Y(t_n)=y^*_n,\; X_k | Y_1=y_1^*, \dots,\; Y_n=y_n^*\]
+$$X(t_k) | Y(t_1)=y^*_1, \dots,\; Y(t_n)=y^*_n,\; X_k | Y_1=y_1^*, \dots,\; Y_n=y_n^*$$
 
 ## repeat particle_filter and do backward sampling 
 ```{r}
@@ -486,234 +486,614 @@ Thus the conditional log likelihood at time \(t_k\) is
 \[{\ell_k(\theta) = \log f[Y(t_k)=y^*_k \vert Y(t_1)=y^*_1, \dots, Y(t_{k-1})=y^*_{k-1}],}{ell_k(theta)=log f[Yk = yk* | Y1=y1*, \dots, Y(k-1)=y(k-1)*],}\]
 where is the probability density above.
 
-## pomp package
+
+## KDCA data
 ```{r}
-library(tidyverse)
-read_csv(paste0("https://kingaa.github.io/sbied/stochsim/", "Measles_Consett_1948.csv")) %>%
-select(week,reports=cases) -> meas
-meas %>% as.data.frame() %>% head()
+library(readxl)
+Sys.setlocale("LC_ALL", "Korean")
+dat <- read_xlsx('data/kdca.xlsx')
+dat$date_reported <- as.Date(dat$보도일, format = "%Y-%m-%d")
+dat$date_symptom <- as.Date(dat$발병일, format = "%Y-%m-%d")
+dat$date_diagnosed <- as.Date(dat$진단일, format = "%Y-%m-%d")
+dat$date_notified <- as.Date(dat$신고일, format = "%Y-%m-%d")
 
-sir_step <- function (S, I, R, N, Beta, mu_IR, delta.t, ...) {
-  dN_SI <- rbinom(n=1,size=S,prob=1-exp(-Beta*I/N*delta.t))
-  dN_IR <- rbinom(n=1,size=I,prob=1-exp(-mu_IR*delta.t))
-  S <- S - dN_SI
-  I <- I + dN_SI - dN_IR
-  R <- R + dN_IR
-  c(S = S, I = I, R = R)
+## Fix typing mistakes for the years
+valid_year <- function(data, yrs = c(2020, 2021)) {
+  tf <- format(data$date_diagnosed, "%Y") %in% yrs
+  tf <- rbind(tf, format(data$date_symptom, "%Y") %in% yrs)
+  tf <- rbind(tf, format(data$date_reported, "%Y") %in% yrs)
+  tf <- rbind(tf, format(data$date_notified, "%Y") %in% yrs)
+  validyr <- apply(tf, 2, all)
+  return(data[validyr, ])
+}
+dat_ <- dat
+dat <- valid_year(dat)
+
+library(dplyr)
+dat$delay_onset_diagnosis <- dat$date_diagnosed - dat$date_symptom
+
+library(ggplot2)
+dat %>% 
+  group_by(date_symptom) %>% 
+  summarize(n = n(),
+            s = sum(delay_onset_diagnosis),
+            avg = s/n) %>% 
+  ggplot(aes(x = date_symptom)) +
+  geom_line(aes(y = as.numeric(avg))) + 
+  scale_y_continuous(limits = c(0,10)) +
+  labs(y = "Daily mean delay from onset to diagnosis", 
+       x = "Date of symptom onset")
+
+# serial interval
+dat$infector_id <- as.integer(dat$선행확진자_id)
+
+create_sidata <- function(dat){
+  sidat <- data.frame(matrix(NA, nrow = nrow(dat), ncol = 5))
+  names(sidat) <- c("infectee_id", "infectee_symptom_onset_date", "infector_id", "infector_symptom_onset_date", "serial_interval")
+  x <- 1
+  for (i in 1:nrow(dat)){
+    infector_id <- dat$infector_id[i]
+    if (!is.na(infector_id)){
+      # cat("i = ", i, ", infector_id = ", infector_id, "\n")
+      sidat$infectee_id[x] <- dat$id[i]
+      sidat$infectee_symptom_onset_date[x] <- 
+        format(dat$date_symptom[i], "%Y-%m-%d")
+      sidat$infector_id[x] <- infector_id
+      loc <- match(infector_id, dat$id)
+      # cat("infector location = ", infector_loc, "\n")
+      if (length(loc) == 1) {
+        infector_symptom_date <- format(dat$date_symptom[loc], "%Y-%m-%d")
+        # cat("infector symptom date = ", infector_symptom_date, "\n")
+        sidat$infector_symptom_onset_date[x] <- infector_symptom_date
+        x <- x + 1
+      } else if (length(loc) > 1) {
+        cat("Infector id matched multiple times!\n")
+      } else{
+        cat("Infector id not identified!\n")
+      }
+    }
+  }
+  sidat$infectee_symptom_onset_date <- 
+    as.Date(sidat$infectee_symptom_onset_date)
+  sidat$infector_symptom_onset_date <- 
+    as.Date(sidat$infector_symptom_onset_date) 
+  sidat$serial_interval <- 
+    as.numeric(sidat$infectee_symptom_onset_date - infector_symptom_onset_date)
+  return(sidat)
 }
 
-sir_rinit <- function (N, eta, ...) {
-  c(S = round(N*eta), I = 1, R = round(N*(1-eta)))
+sidat <- create_sidata(dat)
+
+library(magrittr)
+sidat %<>% 
+  mutate(
+    infectee_symptom_onset_date  = as.Date(infectee_symptom_onset_date), 
+    infector_symptom_onset_date  = as.Date(infector_symptom_onset_date),
+    serial_interval = as.numeric(infectee_symptom_onset_date - infector_symptom_onset_date))
+
+sidat %>%
+  filter(!is.na(infector_symptom_onset_date)) %>% 
+  ggplot(aes(x = infector_symptom_onset_date)) +
+  geom_point(aes(y = serial_interval))
+
+sidat %>% 
+  group_by(infector_symptom_onset_date) %>% 
+  summarise(n = n(),
+            mean = mean(serial_interval, na.rm = T),
+            median = median(serial_interval, na.rm = T), 
+            q1 = quantile(serial_interval, probs = 0.25, na.rm = T),
+            q3 = quantile(serial_interval, probs = 0.75, na.rm = T),
+            IQR = q3 - q1,
+            lower_fence = q1 - 1.5*IQR, 
+            upper_fence = q3 + 1.5*IQR) -> sidat_summary
+
+sidat_summary %>% 
+  filter(!is.na(infector_symptom_onset_date)) %>%
+  ggplot(aes(x = infector_symptom_onset_date)) +
+  geom_line(aes(y = median), color = "darkred") +
+  geom_point(aes(y = median), color = "darkred") +
+  geom_segment(aes(x = infector_symptom_onset_date, xend = infector_symptom_onset_date,
+              y = upper_fence, yend = lower_fence), size = 0.6) +
+  scale_y_continuous(limits = c(-20,20)) + 
+  labs(x = "Date of infector symptom onset", 
+       y = "Daily serial interval")
+
+dat %>% 
+  group_by(date_reported) %>% 
+  summarize(n = n()) %>% 
+  ggplot(aes(date_reported, n)) + 
+  geom_line()
+## quite a few individuals developed symptoms and were diagnosed on the same day
+# length(as.numeric(dat$delay_onset_diagnosis[dat$delay_onset_diagnosis<50 & dat$delay_onset_diagnosis==0]))
+# [1] 37697
+
+# weekly average of serial interval
+
+```
+
+### Gyeonggi-do data
+```{r}
+library(dplyr)
+dat %>% 
+  filter(감염경로 == "국내", 거주시도 == "경기") %>% 
+  group_by(date_reported) %>% 
+  summarize(daily_confirmed = n()) -> gg
+names(gg) <- c("date", "daily_confirmed")
+
+## To fill up the dates on the gg dataset such data each data point is equidistant
+dat1 <- data.frame(date = gg$date, daily_confirmed = gg$daily_confirmed)
+dat2 <- data.frame(date = seq(min(gg$date), max(gg$date), by = "day"), 
+                  daily_confirmed = 0)
+
+# dat2[nrow(dat2)-1, 2] <- 363
+# dat2[nrow(dat2), 2] <- 403
+dat <- left_join(dat2, dat1, by = "date")
+dat_ <- dat
+dat <- dat[, c("date", "daily_confirmed.y")]
+names(dat) <- c("date", "daily_confirmed")
+dat$daily_confirmed[is.na(dat$daily_confirmed)] <- 0
+
+## read from manually compiled data (provided by Sun-hwa Choi)
+library(readxl)
+dat <- read_xlsx("data/korea_confirmed_region_sun.xlsx")
+dat <- dat[, c(1, 10)] #Gyeonggi-do
+names(dat) <- c("date", "daily_confirmed")
+dat$date <- as.Date(dat$date, "%Y-%m-%d")
+dat$daily_confirmed[is.na(dat$daily_confirmed)] <- 0
+dat <- dat[!is.na(dat$date), ] 
+library(pfilter)
+# devtools::load_all(".")
+library(parallel)
+library(doParallel)
+library(foreach)
+# latent variables for 1 Jan 2021 estimated by  previous particle filtering
+# simulations that used data from 20 Jan 2020
+# dat_ <- dat
+## fit first of the 
+dat <- dat[dat$date < as.Date("2021-01-10"), ]
+theta["betavol"] <- 0.08
+theta["gamma"] <- 1/2.5
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+gg_pop <- 13740000
+y0 <- c(S = gg_pop - 10, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 0, 
+        CR = 0, A = 0)
+set.seed(23)
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y0,
+                data = dat,
+                data_type = "confirmation",
+                npart = 1e4,
+                tend = nrow(dat),
+                dt = 0.25,
+                error_pdf = "negbin",
+                negbin_size = 15,
+                stoch = TRUE)
+}
+parallel::stopCluster(cl)
+
+saveRDS(pf, "outputs/pf_gg.rds")
+Rt <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+## save as the csv files as they are easier to
+write.csv(Rt, "outputs/Rt_gg.csv", row.names = FALSE)
+write.csv(daily_conf, "outputs/daily_confirmed_gg.csv", row.names = FALSE)
+
+vars <- c("S", "E", "P", "I", "R", "CE", "CI", "CR", "A") 
+
+y20210101_gg <- data.frame(matrix(NA, nrow = 1000, ncol = length(vars)))
+names(y20210101_gg) <- vars
+for (i in 1:length(vars)){
+  df <- as.data.frame(sapply(pf, function(x) x[, vars[i]]))
+  y20210101_gg[1:1000, i] <- as.numeric(df[318, 1:1000])
+}
+# saveRDS(y20210101_gg, "outputs/y20210101_gg.rds")
+
+
+# pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+# df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+# Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+# df <- cbind(Rt_quantile, dat[, c("date", "daily_confirmed")])
+# library(ggplot2)
+# ggplot(df, aes(x = date)) +
+#   geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+#   geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+#   geom_line(aes(y = `50%`), color = "steelblue", size = 1) +
+#   labs(title = expression(R[t]~estimated~using~particle~filtering),
+#        y = expression(R[t]), x = "") +
+#   geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted") +
+#   scale_x_date(date_breaks = "2 month", limits = c(min(df$date), max(df$date)))
+# 
+# # ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 8, height = 5, dpi = 600,
+# #        scale = 2, units = "cm", type = "cairo")
+# # ggsave(paste0("plots/Rt", tstamp, ".pdf"), plt, width = 8, height = 5, dpi = 600,
+# #        scale = 1, units = "cm", device = cairo_pdf)
+# 
+# daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+# daily_conf_quantile <- as.data.frame(t(apply(daily_conf, 1, function(x) quantile(x, pr))))
+# df <- cbind(daily_conf_quantile, dat[, c("date", "daily_confirmed")])
+# 
+# ggplot(df, aes(x = date)) +
+#   geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`),
+#               fill = "steelblue", alpha = 0.4) +
+#   geom_ribbon(aes(ymin = `25%`, ymax = `75%`),
+#               fill = "steelblue", alpha = 0.6) +
+#   geom_line(aes(y = `50%`), color = "steelblue", size = 1) +
+#   labs(title = "Daily confirmed case estimated using particle filtering",
+#        y = "R(t)", x = "Day") +
+#   geom_point(aes(y = daily_confirmed), color = "darkred", size = 1) +
+#   scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month") +
+#   labs(x = "", y = "Daily confirmed case")
+# 
+
+## year 
+local <- filter(dat, 감염경로 == "국내") 
+
+korea_informed <-  local %>% 
+  group_by(신고일) %>% 
+  summarize(case = n())
+names(korea_informed) <- c("date", "case")
+
+gg_informed <- local %>%
+  filter(거주시도 == "경기") %>% 
+  group_by(신고일) %>% 
+  summarize(case = n())
+names(gg_informed) <- c("date", "case")
+
+
+korea_onset <- dat %>% 
+  filter(감염경로 == "국내") %>% 
+  group_by(onset_new) %>% 
+  summarize(case = n())
+names(korea_onset) <- c("date", "case")
+
+gg <- dat %>% 
+  filter(거주시도 == "경기") %>% 
+  group_by(보도일) %>% 
+  summarize(case = n())
+names(gg) <- c("date", "case")
+
+
+gsub("(^\\d{4}).*", "\\1", dat$보도일[62116])
+gsub("(^\\d{4}).*", "\\1", dat$보도일[62116])
+gsub("^[^\\d{4}]+\\d{2}", "\\1", dat$보도일[62116])
+                                    
+as.Date(dat$보도일[62116], format = "%m-%d")
+
+```
+
+### Gyeonggi-do data particle filtering 
+```{r}
+library(dplyr)
+library(data.table)
+# Kyeonggi data set
+# dat0 <- gg_informed
+# dat0 <- korea_informed
+dat0 <- readRDS("gyeonggi.rds")
+names(dat0) <- c("date", "daily_confirmed")
+dat1 <- data.frame(date = dat0$date, daily_confirmed = dat0$daily_confirmed)
+dat2 <- data.frame(date = seq(min(dat0$date), 
+                              max(dat0$date), by = "day"), 
+                  daily_confirmed = 0)
+
+# dat2[nrow(dat2)-1, 2] <- 363
+# dat2[nrow(dat2), 2] <- 403
+dat <- left_join(dat2, dat1, by = "date")
+dat_ <- dat
+dat <- dat[, c("date", "daily_confirmed.y")]
+names(dat) <- c("date", "daily_confirmed")
+dat$daily_confirmed[is.na(dat$daily_confirmed)] <- 0
+
+dat$rollmean <- round(frollmean(dat$daily_confirmed, 7, align = "center"))
+
+# dat[nrow(dat)-1, 2] <- 363
+# dat[nrow(dat), 2] <- 403
+
+# devtools::install()
+library(pfilter)
+# devtools::load_all(".")
+library(parallel)
+library(doParallel)
+library(foreach)
+# latent variables for 1 Jan 2021 estimated by  previous particle filtering
+# simulations that used data from 20 Jan 2020
+dat_ <- dat
+dat <- dat[dat$date > as.Date("2020-02-06") & dat$date < as.Date("2021-07-18") , c("date", "rollmean")]
+names(dat) <- c("date", "daily_confirmed")
+theta["betavol"] <- 0.08
+theta["gamma"] <- 1/2.2
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+gg_pop <- 13740000
+kr_pop <- 50000030
+y0 <- c(S = gg_pop - 10, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 0, 
+        CR = 0, A = 0)
+set.seed(23)
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y0,
+                data = dat,
+                data_type = "confirmation",
+                npart = 1e3,
+                tend = nrow(dat),
+                dt = 0.2,
+                error_pdf = "negbin",
+                negbin_size = 15,
+                stoch = FALSE)
+}
+parallel::stopCluster(cl)
+
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, dat[, c("date", "daily_confirmed")])
+library(ggplot2)
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1) + 
+  labs(title = expression(R[t]~estimated~using~particle~filtering),
+       y = expression(R[t]), x = "") +
+  geom_hline(yintercept = 1, color = "darkred", size = 1, linetype = "dotted") +
+  scale_x_date(date_breaks = "2 month", limits = c(min(df$date), max(df$date)))
+
+# ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 8, height = 5, dpi = 600,
+#        scale = 2, units = "cm", type = "cairo")
+# ggsave(paste0("plots/Rt", tstamp, ".pdf"), plt, width = 8, height = 5, dpi = 600,
+#        scale = 1, units = "cm", device = cairo_pdf)
+
+daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+daily_conf_quantile <- as.data.frame(t(apply(daily_conf, 1, function(x) quantile(x, pr))))
+df <- cbind(daily_conf_quantile, dat[, c("date", "daily_confirmed")])
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), 
+              fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), 
+              fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1) + 
+  labs(title = "Daily confirmed case estimated using particle filtering", 
+       y = "R(t)", x = "Day") +
+  geom_point(aes(y = daily_confirmed), color = "darkred", size = 1) +
+  scale_x_date(date_breaks = "2 month", date_minor_breaks = "1 month") +
+  labs(x = "", y = "Daily confirmed case")
+
+# ggsave(paste0("plots/daily_confirmed", tstamp, ".png"), plt,  width = 3.4, 
+#        height = 2.7, scale = 2, units = "in")
+# ggsave(paste0("plots/daily_confirmed", tstamp, ".png"), plt, width = 8, height = 5, dpi = 600, scale = 2, units = "cm", type = "cairo")
+```
+
+## Fitting renewal equation data using particle filtering 
+```{r}
+datpf <- data.frame(date = seq(as.Date("2021-01-01"), by = "day", 
+                               length.out = nrow(dat)), 
+                    daily_infected = dat$I)
+
+library(pfilter)
+# devtools::load_all(".")
+library(parallel)
+library(doParallel)
+library(foreach)
+nms <- c("date", "daily_infected")
+names(datpf) <- nms
+theta["betavol"] <- 0.6
+theta["gamma"] <- 1/2
+theta["delta"] <- 1/4
+theta["epsilon"] <- 1/2
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
+pop <- 50000030
+y0 <- c(S = pop - 10, E = 0, P = 0, I = 10, R = 0, CE = 0, CI = 0, 
+        CR = 0, A = 0)
+set.seed(23)
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y0,
+                data = datpf,
+                data_type = "infection",
+                npart = 1e4,
+                tend = nrow(datpf),
+                dt = 0.2,
+                error_pdf = "pois",
+                negbin_size = 15,
+                stoch = FALSE)
+}
+parallel::stopCluster(cl)
+
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
+df <- cbind(Rt_quantile, datpf[, nms])
+library(ggplot2)
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "steelblue", alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = "steelblue", alpha = 0.6) +
+  geom_line(aes(y = `50%`), color = "steelblue", size = 1) + 
+  labs(title = expression(R[t]~estimated~using~particle~filtering),
+       y = expression(R[t]), x = "") +
+  geom_hline(yintercept = c(1.2, 1, 2.2, 0.8), color = "darkred", size = 1, linetype = "dotted") +
+  scale_x_date(date_breaks = "2 month", limits = c(min(df$date), max(df$date)))
+
+plot(1:length(Rt), Rt, col = 2)
+lines(df$`50%`, type = "l")
+```
+
+## Data extraction from API (by region)
+```{r}
+library(XML)
+library(RCurl)
+library(dplyr)
+# Sys.setlocale("LC_ALL", "Korean")
+# options(encoding = "UTF-8")
+## data portal
+service_url <- "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19SidoInfStateJson"
+rows <- 4 #number of rows
+## page
+pg <- 1
+# service key (register at https://www.data.go.kr/data/15043376/openapi.do)
+# web site also provides a api request tool to check if the service key works
+# decoded key works for the web site but in R encoded key (with the percent sign works)
+# service_key <- "KNu/yp3/Km2MWttRvbZXNE+b/EH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx+E6vp0bwf/SRPcLfXSYQ=="
+service_key <- "KNu%2Fyp3%2FKm2MWttRvbZXNE%2Bb%2FEH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx%2BE6vp0bwf%2FSRPcLfXSYQ%3D%3D"
+## service period
+start_dt <- gsub("-", "", as.character(Sys.Date()))
+end_dt <- start_dt
+
+start_dt <- "20200401"
+end_dt <- "20210723"
+
+uri <-  paste0(service_url,
+               paste0("?serviceKey=", service_key),
+               paste0("&pageNo=", pg),
+               paste0("&numOfRows=", rows),
+               paste0("&startCreateDt=", start_dt),
+               paste0("&endCreateDt=", end_dt))
+
+xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
+root_node <- xmlRoot(xml_doc)
+xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
+xml_data <- xml_data[order(xml_data$stdDay), ] # make ascending date
+
+dat_gg <- xml_data %>% filter(gubunEn == "Gyeonggi-do") %>%
+  select(createDt, localOccCnt)
+dat <- dat_gg
+names(dat) <- c("date", "daily_confirmed")
+dat$date <- as.Date(dat$date)
+dat$daily_confirmed <- as.numeric(dat$daily_confirmed) # orignally character
+dat <- dat[!is.na(dat$daily_confirmed),]
+
+ncat <- 19 # 19 categories for regions: 17 regions, imported, and total
+days <- as.numeric(end_dt) - as.numeric(start_dt) + 1
+ 
+if (nrow(xml_data) == (ncat * days)) {
+  ## original data with full variables
+  data_full <- readRDS("outputs/data_full.rds")
+  xml_data <- xml_data[order(xml_data$stdDay), ] # make ascending date
+  if (as.Date(tail(xml_data$createDt, 1)) > as.Date(tail(data_full$createDt, 1))) {
+    data_full <- rbind(data_full, xml_data)
+    saveRDS(data_full, "outputs/data_full.rds")
+  }
 }
 
-library(pomp)
-meas %>%
-pomp(times="week",t0=0,
-rprocess=euler(sir_step,delta.t=1/7),
-rinit=sir_rinit
-) -> measSIR
+```
 
-sir_dmeas <- function (reports, H, rho, log, ...) {
-  dbinom(x=reports, size=H, prob=rho, log=log)
-}
-sir_rmeas <- function (H, rho, ...) {
-  c(reports=rbinom(n=1, size=H, prob=rho))
-}
-measSIR %>%
-  pomp(
-  rmeasure=sir_rmeas,
-  dmeasure=sir_dmeas
-) -> measSIR
+## API COVID-19 data extraction by sex and age 
+```{r}
+library(XML)
+library(RCurl)
+library(dplyr)
+# Sys.setlocale("LC_ALL", "Korean")
+# options(encoding = "UTF-8")
+## data portal
+service_url <- "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19GenAgeCaseInfJson"
+rows <- 4 #number of rows
+## page
+pg <- 1
+# service key (register at https://www.data.go.kr/data/15043376/openapi.do)
+# web site also provides a api request tool to check if the service key works
+# decoded key works for the web site but in R encoded key (with the percent sign works)
+service_key <- "KNu%2Fyp3%2FKm2MWttRvbZXNE%2Bb%2FEH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx%2BE6vp0bwf%2FSRPcLfXSYQ%3D%3D"
 
-measSIR %>%
-  simulate(
-  params=c(Beta=7.5,mu_IR=0.5,rho=0.5,eta=0.03,N=38000),
-  nsim=20,format="data.frame",include.data=TRUE
-) -> sims
-sims %>%
-  ggplot(aes(x=week,y=reports,group=.id,color=.id=="data"))+
-  geom_line()+
-  guides(color=FALSE)
+start_dt <- gsub("-", "", as.character(Sys.Date()))
+end_dt <- start_dt
+
+start_dt <- "20210101"
+end_dt <- "20210806"
+
+uri <-  paste0(service_url,
+               paste0("?serviceKey=", service_key),
+               paste0("&pageNo=", pg),
+               paste0("&numOfRows=", rows),
+               paste0("&startCreateDt=", start_dt),
+               paste0("&endCreateDt=", end_dt))
+
+xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
+root_node <- xmlRoot(xml_doc)
+xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
+
+# saveRDS(xml_data, "outputs/data_age_sex_20210101_20210806.rds")
+
+# xml_data <- xml_data[order(xml_data$stdDay), ] # make ascending date
+
+# ncat <- 19 # 19 categories for regions: 17 regions, imported, and total
+# days <- as.numeric(end_dt) - as.numeric(start_dt) + 1
+#  
+# if (nrow(xml_data) == (ncat * days)) {
+#   ## original data with full variables
+#   data_full <- readRDS("outputs/data_full.rds")
+#   xml_data <- xml_data[order(xml_data$stdDay), ] # make ascending date
+#   if (as.Date(tail(xml_data$createDt, 1)) > as.Date(tail(data_full$createDt, 1))) {
+#     data_full <- rbind(data_full, xml_data)
+#     saveRDS(data_full, "outputs/data_full.rds")
+#   }
+# }
+
+```
+
+## API COVID-19 data extraction by testing, etc
+```{r}
+library(XML)
+library(RCurl)
+library(dplyr)
+# Sys.setlocale("LC_ALL", "Korean")
+# options(encoding = "UTF-8")
+## data portal
+service_url <- "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19InfStateJson"
+rows <- 4 #number of rows
+## page
+pg <- 1
+# service key (register at https://www.data.go.kr/data/15043376/openapi.do)
+# web site also provides a api request tool to check if the service key works
+# decoded key works for the web site but in R encoded key (with the percent sign works)
+service_key <- "KNu%2Fyp3%2FKm2MWttRvbZXNE%2Bb%2FEH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx%2BE6vp0bwf%2FSRPcLfXSYQ%3D%3D"
+
+start_dt <- "20200101"
+end_dt <- "20201231"
+
+uri <-  paste0(service_url,
+               paste0("?serviceKey=", service_key),
+               paste0("&pageNo=", pg),
+               paste0("&numOfRows=", rows),
+               paste0("&startCreateDt=", start_dt),
+               paste0("&endCreateDt=", end_dt))
+
+xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
+root_node <- xmlRoot(xml_doc)
+xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
+
+# xml_data <- xml_data[order(as.Date(xml_data$stateDt, format= "%Y%m%d")), ] 
+# calcuate the daily new testing 
+daily_test_completed <- accExamCompCnt[i] - accExamCompCnt[i-1]
+diff_test_ongoing <- examCnt[i] - examCnt[i-1]
+daily_testing[i] <- diff_test_ongoing + daily_test_completed 
+# }
+plot(diff(as.numeric(d$accExamCompCnt)), type="l")
 ```
 
 ```{r}
-library(pomp)
-library(tidyverse)
-seir_step <- Csnippet("
-  double N = S + E1 + E2 + I + R;
-  double dN_SE1 = beta * S * I / N * dt;
-  double dN_E1E2 = 2 * sigma * E1 * dt;
-  double dN_E2I = 2 * sigma * E2 * dt;
-  double dN_IR = gamma * I * dt;
-  S +=  - dN_SE1;
-  E1 += dN_SE1 - dN_E1E2;
-  E2 += dN_E1E2 - dN_E2I;
-  I += dN_E2I - dN_IR;
-  R += dN_IR;
-  H += dN_SE1;
-")
-
-seir_rinit <- Csnippet("
-  S = S_0;
-  E1 = E1_0;
-  E2 = E2_0;
-  I = I_0;
-  R = R_0;
-  H = H_0;
-")
-
-seir_dmeas <- Csnippet("
-  lik = dpois(daily_infect, H, give_log);
-")
-
-seir_rmeas <- Csnippet("
-  daily_infect = rpois(H);
-")
-
-dat <- data.frame(day = Rt_data$t, daily_infect = Rt_data$daily_infect)
-
-dat %>% pomp(
-  times = "day", 
-  t0 = 1,
-  rprocess = euler(seir_step, delta.t = 0.2),
-  rinit = seir_rinit,
-  rmeasure = seir_rmeas,
-  dmeasure = seir_dmeas,
-  accumvars = "H",
-  statenames = c("S", "E1", "E2", "I", "R", "H"),
-  paramnames = c("beta", "sigma", "gamma", "S_0", "E1_0", "E2_0", "I_0", "R_0", "H_0")) -> covid_seir
-
-covid_seir %>%
-  simulate(params = c(beta=1.2*0.25, sigma=0.25, gamma=0.25,
-                      S_0=1e7, E1_0=40, E2_0=40, I_0=100, R_0=0, H_0=0),
-nsim = 20, format="data.frame", include.data=TRUE) -> sims
-
-sims %>%
-  ggplot(aes(x=day,y=daily_infect, group=.id, color=.id=="data"))+
-  geom_line()+
-  guides(color=FALSE)
-
-covid_seir %>%
-  pfilter(Np=1000, paramnames="beta") -> pfrick
-
-```
-
-```{r}
-library(pomp)
-library(tidyverse)
-seir_step <- Csnippet("
-  double N = S + E1 + E2 + I + R;
-  double dN_SE1 = beta * S * I / N * dt;
-  double dN_E1E2 = 2 * 0.25 * E1 * dt;
-  double dN_E2I = 2 * 0.25 * E2 * dt;
-  double dN_IR = 0.25 * I * dt;
-  S +=  - dN_SE1;
-  E1 += dN_SE1 - dN_E1E2;
-  E2 += dN_E1E2 - dN_E2I;
-  I += dN_E2I - dN_IR;
-  R += dN_IR;
-  H += dN_SE1;
-")
-
-seir_rinit <- Csnippet("
-  S = 1e7;
-  E1 = 40;
-  E2 = 40;
-  I = 100;
-  R = 0;
-  H = 0;
-")
-
-seir_dmeas <- Csnippet("
-  lik = dpois(daily_infect, H, give_log);
-")
-
-seir_rmeas <- Csnippet("
-  daily_infect = rpois(H);
-")
-
-dat <- data.frame(day = Rt_data$t, daily_infect = as.integer(Rt_data$daily_infect))
-
-dat %>% pomp(
-  times = "day", 
-  t0 = 1,
-  rprocess = euler(seir_step, delta.t = 0.2),
-  rinit = seir_rinit,
-  rmeasure = seir_rmeas,
-  dmeasure = seir_dmeas,
-  accumvars = "H",
-  statenames = c("S", "E1", "E2", "I", "R", "H"),
-  paramnames = c("beta")) -> covid_seir
-
-covid_seir %>%
-  simulate(params = c(beta=1.2*0.25),
-nsim = 20, format="data.frame", include.data=TRUE) -> sims
-
-sims %>%
-  ggplot(aes(x=day,y=daily_infect, group=.id, color=.id=="data"))+
-  geom_line()+
-  guides(color=FALSE)
-
-pf = pfilter(covid_seir, Np=1000, params = c(beta = 0.3), 
-             filter.mean = T, filter.traj = T, verbose = T) 
-pf@filter.mean %>% 
-  t() %>%
-  as.data.frame() %>%
-  mutate(time = 1:n()) %>% 
-  pivot_longer(-time) %>%
-  filter(name == "I") %>% 
-  ggplot(aes(time, value)) +
-  geom_line(aes(color = name))
-  
-```      
-
-```{r}
-ewmeas %>%
-  subset(time < 1952) %>%
-  pomp(
-    times="time",t0=1948,
-    rprocess=euler(
-      Csnippet("
-        int nrate = 6;
-        double rate[nrate];	// transition rates
-        double trans[nrate];	// transition numbers
-        double dW;
-
-        // gamma noise, mean=dt, variance=(sigma^2 dt)
-        dW = rgammawn(sigma,dt);
-
-        // compute the transition rates
-        rate[0] = mu*pop;	// birth into susceptible class
-        rate[1] = (iota+Beta*I*dW/dt)/pop; // force of infection
-        rate[2] = mu;		// death from susceptible class
-        rate[3] = gamma;	// recovery
-        rate[4] = mu;		// death from infectious class
-        rate[5] = mu; 		// death from recovered class
-
-        // compute the transition numbers
-        trans[0] = rpois(rate[0]*dt);	// births are Poisson
-        reulermultinom(2,S,&rate[1],dt,&trans[1]);
-        reulermultinom(2,I,&rate[3],dt,&trans[3]);
-        reulermultinom(1,R,&rate[5],dt,&trans[5]);
-
-        // balance the equations
-        S += trans[0]-trans[1]-trans[2];
-        I += trans[1]-trans[3]-trans[4];
-        R += trans[3]-trans[5];
-      "),
-      delta.t=1/52/20
-    ),
-    rinit=Csnippet("
-      double m = pop/(S_0+I_0+R_0);
-      S = nearbyint(m*S_0);
-      I = nearbyint(m*I_0);
-      R = nearbyint(m*R_0);
-    "),
-    paramnames=c("mu","pop","iota","gamma","Beta","sigma",
-      "S_0","I_0","R_0"),
-    statenames=c("S","I","R"),
-    params=c(mu=1/50,iota=10,pop=50e6,gamma=26,Beta=400,sigma=0.1,
-      S_0=0.07,I_0=0.001,R_0=0.93)
-  ) -> ew1
+# d0 <- readRDS("outputs/data_full_20200601_20201231.rds")
+d1 <- readRDS("outputs/data_full.rds")
+dd <- rbind(d0, d1) 
+dd %>%
+  group_by(gubunEn) %>%
+  summarize(n = n(), 
+            sumIR = sum(as.numeric(qurRate)), 
+            meanIR = mean(as.numeric(qurRate)))
 ```
 
