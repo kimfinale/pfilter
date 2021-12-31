@@ -6,9 +6,9 @@ nsteps,2900
 epsilon,0.333333333
 delta,0.192307692
 gamma,0.23255814
-frac_a,0
-rho_a,0
-rho_p,0
+fa,0
+ba,0
+bp,0
 time_intervention_start,18
 betavol,0.4
 R0,1.1
