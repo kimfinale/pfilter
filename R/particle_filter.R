@@ -53,9 +53,9 @@ particle_filter <- function (params = theta,
   }
   durP <- (1 / params[["delta"]] - 1 / params[["epsilon"]])
   durI <- (1 / params[["gamma"]])
-  fa <- params[["frac_a"]]
-  rhoa <- params[["rho_a"]]
-  rhop <- params[["rho_p"]]
+  fa <- params[["fa"]]
+  rhoa <- params[["ba"]]
+  rhop <- params[["bp"]]
   R0_dur <- ((1 - fa) + fa * rhoa) * durI + rhop * durP
   # beta <- params["beta"]
   beta <- params[["R0"]] / R0_dur
