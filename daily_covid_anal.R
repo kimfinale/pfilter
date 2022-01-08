@@ -83,7 +83,7 @@ dat <- data_full %>% filter(gubunEn == "Total") %>%
 names(dat) <- c("date", "daily_confirmed")
 dat$date <- as.Date(dat$date)
 dat$daily_confirmed <- as.numeric(dat$daily_confirmed) # originally character
-saveRDS(dat, "daily_sim/dat.rds")
+saveRDS(dat, "outputs/dat.rds")
 ## save the file also in csv format for easier handling in the shiny app
 readr::write_csv(dat, "daily_sim/dat.csv")
 
@@ -137,12 +137,13 @@ pf <- foreach(i = 1:nrep, .packages = "pfilter", .inorder = F) %dopar% {
 }
 parallel::stopCluster(cl)
 
-saveRDS(pf, "daily_sim/pf.rds")
+# saveRDS(pf, "daily_sim/pf.rds")
+saveRDS(pf, "outputs/pf.rds")
 Rt <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
 daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
 ## save as the csv files as they are easier to
-data.table::fwrite(Rt, "daily_sim/Rt.csv")
-data.table::fwrite(daily_conf, "daily_sim/daily_confirmed.csv")
+# data.table::fwrite(Rt, "daily_sim/Rt.csv")
+# data.table::fwrite(daily_conf, "daily_sim/daily_confirmed.csv")
 
 set.seed(23)
 ids <- sample.int(npart, nsample)
@@ -150,15 +151,18 @@ ids <- sample.int(npart, nsample)
 nstates <- 9 # SEPIR, CE, CI, CR, A
 str <- names(pf[[1]])
 samp <- lapply(str[1:nstates], function(x) extract_sample_pf(pf, x, days, ids))
-smpl_states <- as.data.frame(do.call(cbind, samp))
-names(smpl_states) <- str[1:nstates]
+smpl_last_states <- as.data.frame(do.call(cbind, samp))
+names(smpl_last_states) <- str[1:nstates]
 
-samp_Rt <- sapply(str[nstates + 1], function(x) extract_sample_pf(pf, x, days, ids))
-smpl_Rt <- as.data.frame(samp_Rt)
-sub_pf <- pf[ids]
-smpl_daily_confirmed <- as.data.frame(sapply(sub_pf, function(x) x[, "CR"]))
+# samp_Rt <- sapply(str[nstates + 1], function(x) extract_sample_pf(pf, x, days, ids))
+# smpl_Rt <- as.data.frame(samp_Rt)
+smpl_Rt <- Rt[, ids]
+smpl_daily_confirmed <- daily_conf[, ids]
 
-data.table::fwrite(smpl_states, "daily_sim/smpl_states.csv")
+# sub_pf <- pf[ids]
+# smpl_daily_confirmed <- as.data.frame(sapply(sub_pf, function(x) x[, "CR"]))
+
+data.table::fwrite(smpl_last_states, "daily_sim/smpl_last_states.csv")
 data.table::fwrite(smpl_Rt, "daily_sim/smpl_Rt.csv")
 data.table::fwrite(smpl_daily_confirmed, "daily_sim/smpl_daily_confirmed.csv")
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 cd C:/Users/jonghoon.kim/workspace/pfilter
 # run the r script for download the data and run the particle filter
-Rscript -e "eval(parse('daily_covid_anal.R', encoding='UTF-8'))"
+# Rscript -e "eval(parse('daily_covid_anal.R', encoding='UTF-8'))"
 # select files to push to the GitHub
 fn1="daily_sim/dat.csv"
 fn2="daily_sim/smpl_Rt.csv"
