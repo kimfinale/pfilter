@@ -4,11 +4,11 @@
 library(XML)
 library(RCurl)
 library(dplyr)
-# Sys.setlocale("LC_ALL", "Korean")
-# options(encoding = "UTF-8")
+Sys.setlocale("LC_ALL", "Korean")
+options(encoding = "UTF-8")
 ## data portal
-service_url <- "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19SidoInfStateJson"
-rows <- 4 #number of rows
+service_url <- "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19GenAgeCaseInfJson"
+rows <- 10 #number of rows
 ## page
 pg <- 1
 # service key (register at https://www.data.go.kr/data/15043376/openapi.do)
@@ -39,6 +39,7 @@ uri <-  paste0(service_url,
                paste0("&numOfRows=", rows),
                paste0("&startCreateDt=", start_dt),
                paste0("&endCreateDt=", end_dt))
+
 
 xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
 root_node <- xmlRoot(xml_doc)
@@ -87,31 +88,30 @@ saveRDS(dat, "daily_sim/dat.rds")
 ## save the file also in csv format for easier handling in the shiny app
 readr::write_csv(dat, "daily_sim/dat.csv")
 
-# ## Gyeonggi-do
-# dat_gg <- data_full %>% filter(gubunEn == "Gyeonggi-do") %>%
-#   select(createDt, localOccCnt)
-# names(dat_gg) <- c("date", "daily_confirmed")
-# dat_gg$date <- as.Date(dat_gg$date)
-# dat_gg$daily_confirmed <- as.numeric(dat_gg$daily_confirmed)
-# saveRDS(dat_gg, "daily_sim/dat_gg.rds")
-# ## save the file also in csv format for easier handling in the shiny app
-# data.table::fwrite(dat_gg, "daily_sim/dat_gg.csv")
+## Gyeonggi-do
+dat_gg <- data_full %>% filter(gubunEn == "Gyeonggi-do") %>%
+  select(createDt, localOccCnt)
+names(dat_gg) <- c("date", "daily_confirmed")
+dat_gg$date <- as.Date(dat_gg$date)
+dat_gg$daily_confirmed <- as.numeric(dat_gg$daily_confirmed)
+saveRDS(dat_gg, "daily_sim/dat_gg.rds")
+## save the file also in csv format for easier handling in the shiny app
+data.table::fwrite(dat_gg, "daily_sim/dat_gg.csv")
 
+# ## Fit starting from January 1, 2022
 # devtools::install()
 library(pfilter)
 library(parallel)
 library(doParallel)
 library(foreach)
-
 # latent variables for 1 Jan 2021 estimated by  previous particle filtering
-# simulations that used data from 1 Jun 2021
-y0_20210531 <- readRDS("outputs/y0_20210531.rds")
-y0 <- round(y0_20210531)
-# dat <- readRDS("daily_sim/dat.rds")
-# theta[["betavol"]] <- 0.1
-# theta[["gamma"]] <- 1/2.5
-# usethis::use_data(theta, overwrite = T)
-# devtools::load_all(".")
+# simulations that used data from 20 Jan 2020
+y20210101 <- readRDS("outputs/y20210101.rds")
+y20210101 <- round(y20210101)
+theta["betavol"] <- 0.08
+theta["gamma"] <- 1/2.5
+usethis::use_data(theta, overwrite = T)
+devtools::load_all(".")
 
 set.seed(23)
 
@@ -119,21 +119,17 @@ ncores <- detectCores()
 cl <- makeCluster(getOption("cl.cores", ncores - 2))
 doParallel::registerDoParallel(cl)
 
-npart <- 1e4
-nrep <- 1e3
-dt <- 0.2
-
-pf <- foreach(i = 1:nrep, .packages = "pfilter", .inorder = F) %dopar% {
+pf <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
   extract_trace(params = theta,
-                y = y0,
+                y = y20210101,
                 data = dat,
                 data_type = "confirmation",
-                npart = npart,
+                npart = 1e4,
                 tend = nrow(dat),
-                dt = dt,
+                dt = 0.25,
                 error_pdf = "negbin",
                 negbin_size = 30,
-                stoch = FALSE)
+                stoch = TRUE)
 }
 parallel::stopCluster(cl)
 
@@ -144,48 +140,31 @@ daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
 data.table::fwrite(Rt, "daily_sim/Rt.csv")
 data.table::fwrite(daily_conf, "daily_sim/daily_confirmed.csv")
 
-set.seed(23)
-ids <- sample.int(npart, nsample)
-
-nstates <- 9 # SEPIR, CE, CI, CR, A
-str <- names(pf[[1]])
-samp <- lapply(str[1:nstates], function(x) extract_sample_pf(pf, x, days, ids))
-smpl_states <- as.data.frame(do.call(cbind, samp))
-names(smpl_states) <- str[1:nstates]
-
-samp_Rt <- sapply(str[nstates + 1], function(x) extract_sample_pf(pf, x, days, ids))
-smpl_Rt <- as.data.frame(samp_Rt)
-sub_pf <- pf[ids]
-smpl_daily_confirmed <- as.data.frame(sapply(sub_pf, function(x) x[, "CR"]))
-
-data.table::fwrite(smpl_states, "daily_sim/smpl_states.csv")
-data.table::fwrite(smpl_Rt, "daily_sim/smpl_Rt.csv")
-data.table::fwrite(smpl_daily_confirmed, "daily_sim/smpl_daily_confirmed.csv")
-
 ## Gyeonggi-do
 # dat_gg <- readRDS("daily_sim/dat_gg.rds")
-# y20210101_gg <- readRDS("outputs/y20210101_gg.rds")
-# ncores <- detectCores()
-# cl <- makeCluster(getOption("cl.cores", ncores - 2))
-# doParallel::registerDoParallel(cl)
-#
-# pf_gg <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
-#   extract_trace(params = theta,
-#                 y = y20210101_gg,
-#                 data = dat_gg,
-#                 data_type = "confirmation",
-#                 npart = 1e4,
-#                 tend = nrow(dat_gg),
-#                 dt = 0.25,
-#                 error_pdf = "negbin",
-#                 negbin_size = 30,
-#                 stoch = TRUE)
-# }
-# parallel::stopCluster(cl)
-# saveRDS(pf_gg, "daily_sim/pf_gg.rds")
-# Rt_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "Rt"]))
-# daily_conf_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "CR"]))
-# ## save as the csv files as they are easier to
-# data.table::fwrite(Rt_gg, "daily_sim/Rt_gg.csv")
-# data.table::fwrite(daily_conf_gg, "daily_sim/daily_confirmed_gg.csv")
+y20210101_gg <- readRDS("outputs/y20210101_gg.rds")
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+pf_gg <- foreach(i = 1:1e3, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y20210101_gg,
+                data = dat_gg,
+                data_type = "confirmation",
+                npart = 1e4,
+                tend = nrow(dat_gg),
+                dt = 0.25,
+                error_pdf = "negbin",
+                negbin_size = 30,
+                stoch = TRUE)
+}
+parallel::stopCluster(cl)
+saveRDS(pf_gg, "daily_sim/pf_gg.rds")
+Rt_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "Rt"]))
+daily_conf_gg <- as.data.frame(sapply(pf_gg, function(x) x[, "CR"]))
+## save as the csv files as they are easier to
+data.table::fwrite(Rt_gg, "daily_sim/Rt_gg.csv")
+data.table::fwrite(daily_conf_gg, "daily_sim/daily_confirmed_gg.csv")
 

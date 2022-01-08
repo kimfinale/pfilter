@@ -36,10 +36,10 @@ process_model <- function (params = NULL,
   zeta <- 1 / durP # rate from P to I
 
   for (ii in seq((tbegin + dt), tend, dt)) {
-    foi <- beta * (params[["bp"]] * P + params[["ba"]] * A + I) / pop
+    foi <- beta * (params[["bp"]] * P + params[["ba"]] * A + I)
     # message(paste('length of S =',length(S)))
     if (stoch){
-      S_to_E <- rbinom(length(S), S, 1 - exp( - foi * dt))
+      S_to_E <- rbinom(length(S), S, 1 - exp( - foi / S * dt))
       E_to_P <- rbinom(length(E), E, 1 - exp( - params[["epsilon"]] * dt))
       P_to_AI <- rbinom(length(P), P, 1 - exp( - zeta * dt))
       P_to_A <- rbinom(length(P_to_AI), P_to_AI, params[["fa"]])
@@ -47,7 +47,7 @@ process_model <- function (params = NULL,
       I_to_R <- rbinom(length(I), I, 1 - exp( - params[["gamma"]] * dt))
       A_to_R <- rbinom(length(A), A, 1 - exp( - params[["gamma"]] * dt))
     } else {
-      S_to_E <- S * foi * dt
+      S_to_E <- foi * dt
       E_to_P <- E * params[["epsilon"]] * dt
       P_to_A <- P * params[["fa"]] * zeta * dt
       P_to_I <- P * (1 - params[["fa"]]) * zeta * dt
@@ -78,7 +78,6 @@ process_model <- function (params = NULL,
   y[, "CE"] <- daily_infected
   y[, "CI"] <- daily_symptom_onset
   y[, "CR"] <- daily_confirmed
-
 
   # nm <- c("S", "E1", "E2", "I", "R", "CE1", "CE2", "CI")
   # for (s in nm) y[, s] <- eval(parse(text = s))

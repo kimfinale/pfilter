@@ -4,9 +4,10 @@ cd C:/Users/jonghoon.kim/workspace/pfilter
 Rscript -e "eval(parse('daily_covid_anal.R', encoding='UTF-8'))"
 # select files to push to the GitHub
 fn1="daily_sim/dat.csv"
-fn2="daily_sim/Rt.csv"
-fn3="daily_sim/daily_confirmed.csv"
-git add "${fn1}" "${fn2}" "${fn3}"
+fn2="daily_sim/smpl_Rt.csv"
+fn3="daily_sim/smpl_states.csv"
+fn4="daily_sim/smpl_daily_confirmed.csv"
+git add "${fn1}" "${fn2}" "${fn3}" "${fn4}"
 git commit -m "Add new simulation outputs"
 git push -f origin master
 # send the message for the simulation suing Pushbullet
