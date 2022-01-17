@@ -17,9 +17,11 @@ pg <- 1
 # service_key <- "KNu/yp3/Km2MWttRvbZXNE+b/EH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx+E6vp0bwf/SRPcLfXSYQ=="
 service_key <- "KNu%2Fyp3%2FKm2MWttRvbZXNE%2Bb%2FEH44cfIYDvMgPFoSKUuKZIxqQoGu0gnAtwslGjupx%2BE6vp0bwf%2FSRPcLfXSYQ%3D%3D"
 ## service period
-start_dt <- gsub("-", "", as.character(Sys.Date()))
-end_dt <- start_dt
+# start_dt <- gsub("-", "", as.character(Sys.Date()))
 
+start_dt <- "2021-06-01"
+# end_dt <- start_dt
+end_dt <- gsub("-", "", as.character(Sys.Date()))
 # In case the program didn't run for any reason, you can set the start_dt and
 # end_dt manually, and run the program.
 # Also, you have to ensure that the last row of the data_full has the date one
@@ -44,6 +46,48 @@ uri <-  paste0(service_url,
 xml_doc <- xmlTreeParse(uri, useInternalNodes = TRUE, encoding = "UTF-8")
 root_node <- xmlRoot(xml_doc)
 xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
+# # some descriptive stats
+# xml_data %>% filter(as.Date(createDt) > as.Date("2021-05-31")) -> d
+# ag <- c("0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69",
+#        "70-79", "80 이상")
+# d %>% filter(gubun %in% ag) -> d
+# d$createDt <- as.Date(d$createDt)
+# d$confCase <- as.integer(d$confCase)
+# d$confCaseRate <- as.numeric(d$confCaseRate)
+# d$criticalRate <- as.numeric(d$criticalRate)
+# d$deathRate <- as.numeric(d$deathRate)
+#
+# dd <- d %>% group_by(createDt) %>% mutate(prop_conf_case = confCase / sum(confCase))
+# ggplot(d, aes(x=createDt, y=confCase, color=gubun)) +
+#   geom_line()
+#
+# ggplot(d, aes(x=createDt, y=confCaseRate, color=gubun)) +
+#   geom_line()
+#
+# ggplot(d, aes(x=createDt, y=criticalRate, color=gubun)) +
+#   geom_line()
+#
+# ggplot(d, aes(x=createDt, y=deathRate, color=gubun)) +
+#   geom_line()
+#
+# ggplot(d, aes(x=createDt, y=confCase, fill=gubun)) +
+#   geom_area(alpha=0.8 , size=.5, colour="white") +
+#   scale_fill_viridis(discrete = T)
+#
+# ggplot(d, aes(x=createDt, y=confCaseRate, fill=gubun)) +
+#   geom_area(alpha=0.8 , size=.5, colour="white") +
+#   scale_fill_viridis(discrete = T)
+#
+# ggplot(dd, aes(x=createDt, y=prop_conf_case, fill=gubun)) +
+#   geom_area(alpha=0.8 , size=.5, colour="white") +
+#   scale_fill_viridis(discrete = T) +
+#   labs(title = expression(R[t]~estimated~using~particle~filtering),
+#        y = expression(R[t]), x = "", fill = "") +
+#   scale_x_date(date_breaks = "2 months")
+# Plot
+# d <- d[grepl("[0-9]*", d$gubun),]
+
+## calculate the cumulative proportion of age
 
 # xml_data <- xml_data[order(xml_data$stdDay), ]
 # saveRDS(ds, "outputs/data_full_20200302_20200531.rds")
@@ -88,15 +132,6 @@ saveRDS(dat, "daily_sim/dat.rds")
 ## save the file also in csv format for easier handling in the shiny app
 readr::write_csv(dat, "daily_sim/dat.csv")
 
-## Gyeonggi-do
-dat_gg <- data_full %>% filter(gubunEn == "Gyeonggi-do") %>%
-  select(createDt, localOccCnt)
-names(dat_gg) <- c("date", "daily_confirmed")
-dat_gg$date <- as.Date(dat_gg$date)
-dat_gg$daily_confirmed <- as.numeric(dat_gg$daily_confirmed)
-saveRDS(dat_gg, "daily_sim/dat_gg.rds")
-## save the file also in csv format for easier handling in the shiny app
-data.table::fwrite(dat_gg, "daily_sim/dat_gg.csv")
 
 # ## Fit starting from January 1, 2022
 # devtools::install()

@@ -1,0 +1,373 @@
+---
+title: "Simulation using the particle filter estimates"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+res <- case_projection(tend = 14)
+res$plot
+
+prj <- project_case(smpl_last_states = NULL,
+                    smpl_Rt = NULL,
+                    Rt_sim = 1.2,
+                    nsample = 200,
+                    tend = 14,
+                    dt = 0.2,
+                    probs = c(0.025, 0.25, 0.5, 0.75, 0.975))
+
+
+case_proj_plot <- function(smpl_daily_confirmed = NULL, 
+                      proj = NULL) {
+  smpl_daily_confirmed <- data.table::fread("daily_sim/smpl_daily_confirmed.csv")
+
+  df1 <-
+    as.data.frame(t(apply(smpl_daily_confirmed, 1, function(x) quantile(x, pr))))
+  df2 <-
+    as.data.frame(t(apply(prj, 1, function(x) quantile(x, pr))))
+  df2 <- rbind(df1[nrow(df1),], df2)
+  df1$date <- dat$date
+  df2$date <- seq(as.Date(max(dat$date)), by = "day", length.out = nrow(df2))
+  
+  library(ggplot2)
+  plt <- ggplot(df1) +
+    geom_col(data = dat, aes(x = date, y = daily_confirmed),
+           fill = "grey50", alpha = 0.3) +
+    geom_ribbon(aes(x = date, ymin = `2.5%`, ymax = `97.5%`),
+              fill = "steelblue", alpha = 0.3) +
+    geom_ribbon(aes(x = date, ymin = `25%`, ymax = `75%`),
+              fill = "steelblue", alpha = 0.7) +
+    geom_line(aes(x = date, y = `50%`), color = "steelblue", size = 1) +
+    geom_ribbon(data = df2, aes(x = date, ymin = `2.5%`, ymax = `97.5%`),
+              fill = "indianred", alpha = 0.3) +
+    geom_ribbon(data = df2, aes(x = date, ymin = `25%`, ymax = `75%`),
+              fill = "indianred", alpha = 0.7) +
+    geom_line(data = df2, aes(x = date, y = `50%`), color = "indianred", size = 1) +
+    labs(title = "Daily confirmed case", x = "", y = "") +
+    scale_x_date(date_breaks = "1 month")
+  
+  out <- list(fit = df1, proj = df2, plot = plt)
+}
+```
+
+### Set up simulation to start from Jun 1
+```{r}
+# 1. Reset the initial particles for the state variables, y0
+# ## Fit starting from January 1, 2022
+# To re-create a fit starting form Jun 1
+ndays <- length(seq(as.Date("2021-01-01"), as.Date("2021-05-31"), by = "day"))
+pf <- readRDS("daily_sim/pf.rds")
+pfsub <- do.call(rbind, lapply(pf, function(x) x[ndays, ])) # particles for May 31
+y0_20210531 <- pfsub[, names(pfsub)[1:9]]
+saveRDS(y0_20210531, "outputs/y0_20210531.rds")
+# y0_20210101 <- readRDS("outputs/y20210101.rds")
+# 2. Rest the data
+
+dat <- readRDS("daily_sim/dat.rds")
+saveRDS(dat, "outputs/dat_20210101.rds")
+dat_20210531 <- dat[dat$date > as.Date("2021-05-31"),]
+saveRDS(dat_20210531, "outputs/dat_20210531.rds")
+dat <- saveRDS(dat_20210531, "daily_sim/dat.rds") # reset default
+# 2. Rest the data
+data_full <- readRDS("outputs/data_full.rds")
+saveRDS(data_full, "outputs/data_full_20210101.rds")
+data_full_20210531 <- data_full[data_full$createDt > as.Date("2021-05-31"),]
+saveRDS(data_full_20210531, "outputs/data_full_20210531.rds")
+saveRDS(data_full_20210531, "outputs/data_full.rds") # reset the default
+```
+
+### Delta variant dataset prep
+```{r}
+Sys.setlocale("LC_ALL", "Korean")
+options(encoding = "UTF-8")
+library(tidyverse)
+d <- data.table::fread("data/covid_korea_10Jan2022.csv")
+table(d$변이)
+names(d)
+# 신고일 -> date
+d$variant <- ifelse(d$변이 == "델타형", "Delta",
+                    ifelse(d$변이 == "오미크론형", "Omicron", "Else"))
+d$date <- as.Date(d$보도일, "%m/%d/%Y")
+
+d1 <- d %>% filter(감염경로 == "국내") %>% 
+  select(date, variant) %>% 
+  group_by(date) %>%
+  count(variant)
+
+ggplot(d1) +
+  geom_line(aes(date, n, color = variant))
+
+d1wide <- d1 %>% pivot_wider(names_from = variant, values_from = n, values_fill = 0)
+# create dates for the full 
+d2 <- data.frame(date = seq(as.Date("2020-01-30"), as.Date("2022-01-10"), by = "day"))
+# d2$t <- 1:nrow(d2)
+dat <- left_join(d2, d1wide, by = "date")
+dat[is.na(dat)] <- 0
+saveRDS(dat, paste0("outputs/kdcadat_10Jan2022.rds"))
+
+# dat <- d3 %>% mutate(
+#   Else = ifelse(is.na(Else), 0, Else),
+#   Delta = ifelse(is.na(Delta), 0, Delta),
+#   Omicron = ifelse(is.na(Omicron), 0, Omicron))
+
+# saveRDS(dat, paste0("outputs/kdcadat_10Jan2022.rds"))
+datlong <- dat %>% pivot_longer(cols=-c(date), names_to = "Variant")
+ggplot(datlong) +
+  geom_line(aes(date, value, color = Variant))
+
+# to save the data for the particle filter 
+dat1 <- data.frame(date = dat$date, daily_confirmed = dat$Else)
+dat2 <- data.frame(date = dat$date, daily_confirmed = dat$Delta)
+dat3 <- data.frame(date = dat$date, daily_confirmed = dat$Omicron)
+datlist <- list(Alpha = dat1, Delta = dat2, Omicron = dat3)
+# saveRDS(datlist, paste0("outputs/kdcadat_pf_30Jan2022.rds"))
+```
+
+# Simulation from Apr 27
+```{r}
+# Reset the initial particles for the state variables, y0
+# To re-create a fit starting form Apr 28
+# ndays <- length(seq(as.Date("2021-01-01"), as.Date("2021-04-27"), by = "day"))
+# pf <- readRDS("outputs/pf.rds")
+# pfsub <- do.call(rbind, lapply(pf, function(x) x[ndays, ]))
+# y0_20210427 <- pfsub[, names(pfsub)[1:9]]
+# saveRDS(y0_20210427, "outputs/y0_20210427.rds")
+# On Apr 27, there were first four imported Delta cases
+# On Apr 28, there were three local cases
+# > dat[min(which(dat$Delta > 0)),]
+#           date   t Else Delta Omicron
+# 482 2021-04-28 482  745     3       0
+# We may assume that two of the four imported cases may have contributed to
+# to the local transmission (timewise, this does not make whole lot of sense),
+# but just to get started,
+# y1 <- readRDS("outputs/y0_20210427.rds")
+# y2 <- c(E=0, P=0, A=0, I=2, R=0, CE=0, CI=0, CR=0)
+# y3 <- c(E=0, P=0, A=0, I=2, R=0, CE=0, CI=0, CR=0)
+# ylist <- list(Alpha = y1, Delta = y2, Omicron = y3)
+# saveRDS(ylist, paste0("outputs/ylist_20210427.rds"))
+# dat <- readRDS("outputs/kdcadat_pf_30Jan2022.rds")
+# dat1 <- dat[["Alpha"]]
+# dat2 <- dat[["Delta"]]
+# dat3 <- dat[["Omicron"]]
+# # 
+# dt <- as.Date("2021-04-27")
+# dat1 <- dat1[dat1$date > dt,]
+# dat2 <- dat2[dat2$date > dt,]
+# dat3 <- dat3[dat3$date > dt,]
+# datlist <- list(Alpha = dat1, Delta = dat2, Omicron = dat3)
+# saveRDS(datlist, paste0("outputs/dat_20210428.rds"))
+
+```
+
+## particle_filter_variant
+```{r}
+library(pfilter)
+datlist <- readRDS("outputs/dat_20210428.rds")
+ylist <- readRDS("outputs/ylist_20210427.rds")
+# reset the Delta and Omicron start t as they are based on the days
+# from Jan 30, 2021 whereas the dataset starts from Apr 28, 2021
+diff_dt <- as.Date("2021-04-28") - as.Date("2020-01-30") 
+theta$Delta_start <- as.numeric(theta$Delta_start - diff_dt)
+theta$Omicron_start <- as.numeric(theta$Omicron_start - diff_dt)
+
+set.seed(23)
+npart <- 1e3 
+nrep <- 1e3
+dt <- 0.2
+# tend <- nrow(dat1) # dat1, dat2, dat3 have the same number of rows
+tend <- 230 # dat1, dat2, dat3 have the same number of rows
+
+pf <- particle_filter_variant(params = theta,
+                            y = ylist,
+                            data = datlist,
+                            data_type = "confirmation",
+                            npart = npart,
+                            tend = tend,
+                            dt = dt,
+                            error_pdf = "negbin",
+                            negbin_size = 10) 
+
+plot(1:tend, pf$trace$Alpha$beta, type="l")
+lines(1:tend, pf$trace$Delta$beta, col=2)
+lines(1:tend, pf$trace$Omicron$beta, col=3)
+```
+
+## extract_trace
+```{r}
+library(pfilter)
+datlist <- readRDS("outputs/dat_20210428.rds")
+ylist <- readRDS("outputs/ylist_20210427.rds")
+# reset the Delta and Omicron start t as they are based on the days
+# from Jan 30, 2021 whereas the dataset starts from Apr 28, 2021
+diff_dt <- as.Date("2021-04-28") - as.Date("2020-01-30") 
+theta$Delta_start <- as.numeric(theta$Delta_start - diff_dt)
+theta$Omicron_start <- as.numeric(theta$Omicron_start - diff_dt)
+
+set.seed(23)
+npart <- 1e4 
+nrep <- 1e3
+dt <- 0.2
+# tend <- nrow(dat1) # dat1, dat2, dat3 have the same number of rows
+tend <- 250 # dat1, dat2, dat3 have the same number of rows
+
+pf <- extract_trace_variant(params = theta,
+                y = ylist,
+                data = datlist,
+                data_type = "confirmation",
+                npart = npart,
+                tend = tend,
+                dt = dt,
+                error_pdf = "negbin",
+                negbin_size = 10)
+
+plot(pf$Delta$Rt)
+
+```
+
+```{r}
+# devtools::install()
+
+library(pfilter)
+library(parallel)
+library(doParallel)
+library(foreach)
+library(tidyverse)
+
+set.seed(23)
+
+datlist <- readRDS("outputs/dat_20210428.rds")
+ylist <- readRDS("outputs/ylist_20210427.rds")
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+npart <- 1e4
+nrep <- 1e3
+dt <- 0.2
+tend <- 100
+pf <- foreach(i = 1:nrep, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace_variant(params = theta,
+                y = ylist,
+                data = datlist,
+                data_type = "confirmation",
+                npart = npart,
+                tend = tend,
+                dt = dt,
+                error_pdf = "negbin",
+                negbin_size = 30)
+}
+parallel::stopCluster(cl)
+
+voc <- "Delta"
+probs <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+df <- as.data.frame(sapply(pf, function(x) x[[voc]][, "Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, probs))))
+df <- cbind(Rt_quantile, 
+            datlist[[voc]][1:tend, c("date", "daily_confirmed")])
+
+col_fill <- "#1F618D"
+col_dat <- "grey80"
+col_rt <- "#1F618D"
+
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_rt, alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_rt, alpha = 0.7) +
+  geom_line(aes(y = `50%`), color = col_rt, size = 1) + 
+  geom_hline(yintercept = 1, color="darkred", size=1, linetype="dotted")+
+  labs(title = expression(R[t]~estimated~using~particle~filtering),
+       y = "", x = "") +
+  scale_x_date(date_breaks = "1 month")
+ 
+daily_conf <- as.data.frame(sapply(pf, function(x) x[[voc]][, "CR"]))
+daily_conf_quantile <- 
+  as.data.frame(t(apply(daily_conf, 1, function(x) quantile(x, probs))))
+df <- cbind(daily_conf_quantile, 
+            datlist[[voc]][1:tend, c("date", "daily_confirmed")])
+
+ggplot(df, aes(x = date)) +
+  geom_col(aes(y = daily_confirmed), color = col_dat, width = 0.8) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_fill, alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_fill, alpha = 0.6) +
+  geom_line(aes(y=`50%`), color=col_fill, size=1) +
+  labs(title="Daily confirmed case estimated using particle filtering", x="", y="") +
+  scale_x_date(date_breaks = "1 month")
+```
+
+## Alpha or Delta only
+```{r}
+library(pfilter)
+library(parallel)
+library(doParallel)
+library(foreach)
+
+datlist <- readRDS("outputs/dat_20210428.rds")
+ylist <- readRDS("outputs/ylist_20210427.rds")
+
+# dat <- datlist$Delta
+# y0 <- c(S=5e7,ylist$Delta)
+
+dat <- datlist$Alpha
+y0 <- ylist$Alpha
+
+set.seed(23)
+
+ncores <- detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores - 2))
+doParallel::registerDoParallel(cl)
+
+npart <- 1e4
+nrep <- 1e3
+dt <- 0.2
+tend <- nrow(dat)
+pf <- foreach(i = 1:nrep, .packages = "pfilter", .inorder = F) %dopar% {
+  extract_trace(params = theta,
+                y = y0,
+                data = dat,
+                data_type = "confirmation",
+                npart = npart,
+                tend = tend,
+                dt = dt,
+                error_pdf = "negbin",
+                negbin_size = 30,
+                stoch = FALSE)
+}
+parallel::stopCluster(cl)
+
+probs <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
+Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, probs))))
+df <- cbind(Rt_quantile, 
+          dat[1:tend, c("date", "daily_confirmed")])
+
+col_fill <- "#1F618D"
+col_dat <- "grey80"
+col_rt <- "#1F618D"
+
+ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_rt, alpha = 0.3) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_rt, alpha = 0.7) +
+  geom_line(aes(y = `50%`), color = col_rt, size = 1) + 
+  geom_hline(yintercept = 1, color="darkred", size=1, linetype="dotted")+
+  labs(title = expression(R[t]~estimated~using~particle~filtering),
+       y = "", x = "") +
+  scale_x_date(date_breaks = "1 month")
+ 
+daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+daily_conf_quantile <- 
+  as.data.frame(t(apply(daily_conf, 1, function(x) quantile(x, probs))))
+df <- cbind(daily_conf_quantile, 
+            dat[1:tend, c("date", "daily_confirmed")])
+
+ggplot(df, aes(x = date)) +
+  geom_col(aes(y = daily_confirmed), color = col_dat, width = 0.8) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_fill, alpha = 0.4) +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_fill, alpha = 0.6) +
+  geom_line(aes(y=`50%`), color=col_fill, size=1) +
+  labs(title="Daily confirmed case estimated using particle filtering", x="", y="") +
+  scale_x_date(date_breaks = "1 month")
+
+```
+

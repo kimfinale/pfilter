@@ -11,7 +11,7 @@
 #' @examples
 #' res <- plot_projection(); res$plot
 case_projection2 <- function(dat = NULL,
-                             smpl_states = NULL,
+                             smpl_last_states = NULL,
                              smpl_Rt = NULL,
                              smpl_daily_confirmed = NULL,
                              Rt_sim = NULL,
@@ -19,19 +19,33 @@ case_projection2 <- function(dat = NULL,
                              dt = 0.1){
 
   # library(pfilter)
-
-  fit_confirm <- smpl_daily_confirmed
+  if (is.null(dat)) {
+    dat <- data.table::fread("daily_sim/dat.csv")
+  }
+  if (is.null(smpl_last_states)) {
+    smpl_last_states <- data.table::fread("daily_sim/smpl_last_states.csv")
+  }
+  if (is.null(smpl_Rt)) {
+    smpl_Rt <- data.table::fread("daily_sim/smpl_Rt.csv")
+    smpl_Rt <- unlist(smpl_Rt[nrow(smpl_Rt),])
+  }
+  if (is.null(smpl_daily_confirmed)) {
+    smpl_daily_confirmed <- data.table::fread("daily_sim/smpl_daily_confirmed.csv")
+  }
   # add 1 to put the last data points
-  proj_confirm <- data.frame(matrix(NA, nrow = tend + 1, ncol = nsample))
-  proj_confirm[1, ] <- tail(fit_confirm, 1)
+  proj_confirm <-
+    data.frame(matrix(NA, nrow = tend + 1, ncol = ncol(smpl_daily_confirmed)))
+  proj_confirm[1, ] <- tail(smpl_daily_confirmed, 1)
 
   # library(dplyr)
+  y <- as.data.frame(smpl_last_states)
+  nms <- names(y)
 
-  y <- smpl_states
-
-  if(!is.null(Rt_sim)){
-    samp_Rt <- (Rt_sim / mean(samp_Rt)) * samp_Rt
+  if (!is.null(Rt_sim)) {
+    smpl_Rt <- (Rt_sim / mean(smpl_Rt)) * smpl_Rt
   }
+  # beta <- as.matrix(smpl_Rt / R0_dur(params = theta), nrow = length(smpl_Rt))
+  beta <- smpl_Rt / R0_dur(params = theta)
 
   for (i in 1:tend) {
     y <- process_model(params = theta,
@@ -39,28 +53,30 @@ case_projection2 <- function(dat = NULL,
                        tbegin = 0,
                        tend = 1,
                        dt = dt,
-                       beta = samp_Rt / R0_dur(params = theta),
+                       beta = beta,
                        stoch = FALSE)
-    names(y) <- str[1:nstates]
+    names(y) <- nms
     proj_confirm[i+1, ] <- y[,"CR"]
   }
 
   pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
-  fit_confirm_qt <- as.data.frame(t(apply(fit_confirm, 1, function(x) quantile(x, pr))))
-  proj_confirm_qt <- as.data.frame(t(apply(proj_confirm, 1, function(x) quantile(x, pr))))
+  smpl_daily_confirmed_qt <-
+    as.data.frame(t(apply(smpl_daily_confirmed, 1, function(x) quantile(x, pr))))
+  proj_confirm_qt <-
+    as.data.frame(t(apply(proj_confirm, 1, function(x) quantile(x, pr))))
 
   sub1 <- data.frame(matrix(NA,
                             nrow = nrow(proj_confirm_qt) - 1,
                             ncol = ncol(proj_confirm_qt)))
 
-  names(sub1) <- names(fit_confirm_qt)
+  names(sub1) <- names(smpl_daily_confirmed_qt)
 
-  df1 <- rbind(fit_confirm_qt, sub1)
+  df1 <- rbind(smpl_daily_confirmed_qt, sub1)
   # -1 to match the end of the fit
   sub2 <- data.frame(matrix(NA,
-                            nrow = nrow(fit_confirm_qt) - 1,
-                            ncol = ncol(fit_confirm_qt)))
-  names(sub2) <- names(fit_confirm_qt)
+                            nrow = nrow(smpl_daily_confirmed_qt) - 1,
+                            ncol = ncol(smpl_daily_confirmed_qt)))
+  names(sub2) <- names(smpl_daily_confirmed_qt)
 
   df2 <- rbind(sub2, proj_confirm_qt)
 

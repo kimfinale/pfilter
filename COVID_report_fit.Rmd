@@ -14,6 +14,7 @@ tstamp <- format(Sys.time(), "%Y%m%d")
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 
 theme_set(theme_bw())
+
 create_plots_pf <- function(pf, dat, pr, tstamp) {
   df <- as.data.frame(sapply(pf, function(x) x[, "Rt"]))
   Rt_quantile <- as.data.frame(t(apply(df, 1, function(x) quantile(x, pr))))
@@ -35,39 +36,62 @@ create_plots_pf <- function(pf, dat, pr, tstamp) {
   ggsave(paste0("plots/Rt", tstamp, ".png"), plt, width = 8, height = 5,
          dpi = 600, scale = 2, units = "cm", type = "cairo")
   
-  daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
-  daily_conf_quantile <- as.data.frame(t(apply(daily_conf, 1, 
-                                               function(x) quantile(x, pr))))
-  df <- cbind(daily_conf_quantile, dat[, c("date", "daily_confirmed")])
+  # daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
+  # daily_conf_quantile <- as.data.frame(t(apply(daily_conf, 1, 
+  #                                              function(x) quantile(x, pr))))
+  # df <- cbind(daily_conf_quantile, dat[, c("date", "daily_confirmed")])
+  # 
+  # plt <- ggplot(df, aes(x = date)) +
+  #   # geom_point(aes(y = daily_confirmed), color = "darkred", size = 1) +
+  #   geom_col(aes(y = daily_confirmed), color = col_dat, width = 0.8) +
+  #   geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_fill, alpha = 0.4) +
+  #   geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_fill, alpha = 0.6) +
+  #   geom_line(aes(y = `50%`), color = col_fill, size = 1) +
+  #   labs(title = "Daily confirmed case estimated using particle filtering", y = "R(t)", x = "Day") +
+  #   scale_x_date(date_breaks = "1 month") +
+  #   labs(x = "", y = "Daily confirmed case") 
+  # 
   
-  plt <- ggplot(df, aes(x = date)) +
-    # geom_point(aes(y = daily_confirmed), color = "darkred", size = 1) +
-    geom_col(aes(y = daily_confirmed), color = col_dat, width = 0.8) +
-    geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = col_fill, alpha = 0.4) +
-    geom_ribbon(aes(ymin = `25%`, ymax = `75%`), fill = col_fill, alpha = 0.6) +
-    geom_line(aes(y = `50%`), color = col_fill, size = 1) +
-    labs(title = "Daily confirmed case estimated using particle filtering", y = "R(t)", x = "Day") +
-    scale_x_date(date_breaks = "1 month") +
-    labs(x = "", y = "Daily confirmed case") 
+  dat <- data.table::fread("daily_sim/dat.csv")
+  smpl_Rt <- data.table::fread("daily_sim/smpl_Rt.csv")
+  smpl_daily_confirmed <- data.table::fread("daily_sim/smpl_daily_confirmed.csv")
+  smpl_last_states <- data.table::fread("daily_sim/smpl_last_states.csv")
   
-  ggsave(paste0("plots/daily_confirmed", tstamp, ".png"), plt, width = 8, 
+  proj <- project_case(smpl_last_states = smpl_last_states,
+               smpl_Rt = unlist(smpl_Rt[nrow(smpl_Rt),]), 
+               Rt_sim = NULL)
+    
+  plt <- case_projection_plot(dat = dat,
+                                  smpl_daily_confirmed = smpl_daily_confirmed, 
+                                  proj = proj)
+
+  ggsave(paste0("plots/daily_confirmed", tstamp, ".png"), plt$plot, width = 8, 
          height = 5, dpi = 600, scale = 2, units = "cm", type = "cairo")
 }
 
-for (i in 1:2) {
-  dat <- readRDS("daily_sim/dat.rds") 
-  saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
-  pf <- readRDS("daily_sim/pf.rds")
-  saveRDS(pf, paste0("outputs/pf", tstamp, ".rds"))
-  if (i == 2){
-    dat <- readRDS("daily_sim/dat_gg.rds")
-    saveRDS(dat, paste0("outputs/dat_gg", tstamp, ".rds"))
-    pf <- readRDS("daily_sim/pf_gg.rds")
-    saveRDS(pf, paste0("outputs/pf_gg", tstamp, ".rds"))
-    tstamp <- paste0("_gg", tstamp)
-  }
-  create_plots_pf(pf = pf, dat = dat, pr = pr, tstamp = tstamp)
-}
+
+dat <- readRDS("outputs/dat.rds") 
+saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
+pf <- readRDS("outputs/pf.rds")
+saveRDS(pf, paste0("outputs/pf", tstamp, ".rds"))
+create_plots_pf(pf = pf, dat = dat, pr = pr, tstamp = tstamp)
+
+
+
+# for (i in 1:2) {
+#   dat <- readRDS("daily_sim/dat.rds") 
+#   saveRDS(dat, paste0("outputs/dat", tstamp, ".rds"))
+#   pf <- readRDS("daily_sim/pf.rds")
+#   saveRDS(pf, paste0("outputs/pf", tstamp, ".rds"))
+#   if (i == 2){
+#     dat <- readRDS("daily_sim/dat_gg.rds")
+#     saveRDS(dat, paste0("outputs/dat_gg", tstamp, ".rds"))
+#     pf <- readRDS("daily_sim/pf_gg.rds")
+#     saveRDS(pf, paste0("outputs/pf_gg", tstamp, ".rds"))
+#     tstamp <- paste0("_gg", tstamp)
+#   }
+#   create_plots_pf(pf = pf, dat = dat, pr = pr, tstamp = tstamp)
+# }
 
 
 

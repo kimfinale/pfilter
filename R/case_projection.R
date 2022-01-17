@@ -19,24 +19,24 @@ case_projection <- function(pf = NULL, dat = NULL,
   ids <- sample.int(npart, nsample)
 
   if (is.null(pf)) {
-    pf <- readRDS("daily_sim/pf.rds")
+    pf <- readRDS("outputs/pf.rds")
   }
   if (is.null(dat)) {
-    dat <- readRDS("daily_sim/dat.rds")
+    dat <- readRDS("outputs/dat.rds")
   }
   nstates <- 9 # SEPIR, CE, CI, CR, A
   str <- names(pf[[1]])
   samp <- lapply(str[1:nstates], function(x) extract_sample_pf(pf, x, days, ids))
   samp_Rt <- sapply(str[nstates + 1], function(x) extract_sample_pf(pf, x, days, ids))
 
-  library(pfilter)
+  # library(pfilter)
   sub_pf <- pf[ids]
   fit_confirm <- as.data.frame(sapply(sub_pf, function(x) x[, "CR"]))
   # add 1 to put the last data points
   proj_confirm <- data.frame(matrix(NA, nrow = tend + 1, ncol = nsample))
   proj_confirm[1, ] <- tail(fit_confirm, 1)
 
-  library(dplyr)
+  # library(dplyr)
 
   y <- as.data.frame(do.call(cbind, samp))
   names(y) <- str[1:nstates]
@@ -45,21 +45,25 @@ case_projection <- function(pf = NULL, dat = NULL,
     samp_Rt <- (Rt_sim / mean(samp_Rt)) * samp_Rt
   }
   dt <- 0.1 # dt for the process_model simulation
+  beta <- samp_Rt / R0_dur(params = theta)
+
   for (i in 1:tend) {
     y <- process_model(params = theta,
                        y = y,
                        tbegin = 0,
                        tend = 1,
                        dt = dt,
-                       beta = samp_Rt / R0_dur(params = theta),
+                       beta = beta,
                        stoch = FALSE)
     names(y) <- str[1:nstates]
     proj_confirm[i+1, ] <- y[,"CR"]
   }
 
   pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
-  fit_confirm_qt <- as.data.frame(t(apply(fit_confirm, 1, function(x) quantile(x, pr))))
-  proj_confirm_qt <- as.data.frame(t(apply(proj_confirm, 1, function(x) quantile(x, pr))))
+  fit_confirm_qt <-
+    as.data.frame(t(apply(fit_confirm, 1, function(x) quantile(x, pr))))
+  proj_confirm_qt <-
+    as.data.frame(t(apply(proj_confirm, 1, function(x) quantile(x, pr))))
 
   sub1 <- data.frame(matrix(NA,
                             nrow = nrow(proj_confirm_qt) - 1,

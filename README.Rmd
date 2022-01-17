@@ -16,6 +16,7 @@ ggplot2::theme_set(theme(text = element_text(family = "Calibri", size = 12),
 ```
 
 
+## Parameter (theta) set up
 ```{r data}
 theta_ <- data.table::fread("inst/extdata/theta.csv")
 theta <- theta_$val
@@ -23,8 +24,20 @@ names(theta) <- theta_$name
 y0_ <- data.table::fread("inst/extdata/y0.csv")
 y0 <- y0_$val
 names(y0) <- y0_[["name"]]
- 
 usethis::use_data(y0, overwrite = T)
+
+dat <- readRDS("outputs/kdcadat_pf_10Jan2022.rds")
+# > min(which(dat$Delta$daily_confirmed > 0))
+# [1] 455
+# > min(which(dat$Omicron$daily_confirmed > 0))
+# [1] 672
+
+theta[["Delta_start"]] <- 454 #
+theta[["Delta_start_date"]] <- as.Date("2021-04-28")
+theta[["Omicron_start"]] <- 671  
+theta[["Omicron_start_date"]] <- as.Date("2021-12-01")
+theta$dt <- 0.2 
+
 usethis::use_data(theta, overwrite = T)
  
 devtools::document()

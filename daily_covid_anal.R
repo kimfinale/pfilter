@@ -30,8 +30,8 @@ end_dt <- start_dt
 #   dplyr::filter(createDt < as.Date("2021-07-07")) %>%
 #   saveRDS("outputs/data_full.rds")
 #
-# start_dt <- "20211130"
-# end_dt <- "20211116"
+# start_dt <- "20220116"
+# end_dt <- "20220117"
 
 uri <-  paste0(service_url,
                paste0("?serviceKey=", service_key),
@@ -62,6 +62,9 @@ xml_data <- xmlToDataFrame(nodes = getNodeSet(root_node, '//item'))
 # rr[, c(1,14)] <- dd[2545, c(1,14)]
 # dd <- rbind(dd[1:2545, ], rr, dd[2546:nrow(dd), ])
 # saveRDS(dd, "outputs/data_full_20200601_20201231.rds")
+
+# data_full <- readRDS("outputs/data_full.rds")
+# data_full <- data_full[data_full$createDt < as.Date("2022-01-16"),]
 
 ncat <- 19 # 19 categories for regions: 17 regions, imported, and total
 days <- as.numeric(as.Date(end_dt, "%Y%m%d") - as.Date(start_dt, "%Y%m%d") + 1)
@@ -146,11 +149,12 @@ daily_conf <- as.data.frame(sapply(pf, function(x) x[, "CR"]))
 # data.table::fwrite(daily_conf, "daily_sim/daily_confirmed.csv")
 
 set.seed(23)
-ids <- sample.int(npart, nsample)
+nsample <- 200
+ids <- sample.int(nrep, nsample)
 
 nstates <- 9 # SEPIR, CE, CI, CR, A
 str <- names(pf[[1]])
-samp <- lapply(str[1:nstates], function(x) extract_sample_pf(pf, x, days, ids))
+samp <- lapply(str[1:nstates], function(x) extract_sample_pf(pf, x, days = 1, ids))
 smpl_last_states <- as.data.frame(do.call(cbind, samp))
 names(smpl_last_states) <- str[1:nstates]
 
